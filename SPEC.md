@@ -22,6 +22,7 @@ comando en Linux, macOS y Windows, y responde a cuatro preguntas:
 2. ¿Puedo expulsar uno para liberar memoria sin tocar la terminal?
 3. ¿Puedo descargar un modelo nuevo desde aquí?
 4. ¿Cuántos tokens he gastado con cada modelo desde que lo descargué?
+5. ¿Cuánto espacio libre me queda en los discos y cuánto ocupan los modelos?
 
 Requisitos transversales: atractivo, arranque instantáneo, **un solo binario**,
 cero dependencias en tiempo de ejecución, consumo mínimo.
@@ -323,6 +324,7 @@ Objetivo: liberar VRAM cuando no molesta, **jamás** interrumpir algo en curso.
 | GET | `/pulls/:id/events` | SSE: `status`, `completed`, `total`, `percent`, `speed` |
 | DELETE | `/pulls/:id` | Cancela la descarga |
 | GET | `/ps` | Modelos cargados ahora, normalizado |
+| GET | `/disk` | Espacio total, libre y ocupado de cada disco, con el de modelos destacado |
 | GET | `/usage/summary?from=&to=` | Totales por modelo y por cliente |
 | GET | `/usage/series?from=&to=&bucket=hour\|day` | Serie para gráficos |
 | GET | `/usage/export.csv` | Exportación |
@@ -344,8 +346,8 @@ claro opcional.
 
 ### 8.1 Resumen (pantalla inicial)
 
-- 4 tarjetas: modelos instalados · modelos en VRAM · VRAM usada / total · tokens
-  totales (con delta de 24 h).
+- 5 tarjetas: modelos instalados · modelos en VRAM · VRAM usada / total ·
+  **disco de modelos (libre / total)** · tokens totales (con delta de 24 h).
 - Barra de modelos cargados: tamaño en VRAM, tiempo restante de `keep_alive`,
   candado si está fijado, botón **Expulsar**.
 - Gráfico de área de tokens por día (30 días), una serie por modelo.
@@ -389,6 +391,60 @@ clientes.
 - Responsive hasta 380 px; en móvil la tabla pasa a tarjetas.
 - Estados vacíos con acción sugerida, nunca una pantalla en blanco.
 
+### 8.7 Almacenamiento
+
+Requisito añadido para la prueba de fuego: el dashboard debe mostrar el espacio
+**total, libre y ocupado** de los discos, no solo lo que suman los modelos.
+
+- **Tarjeta de Resumen**: disco donde viven los modelos, con `libre de total` y
+  una barra de ocupación. Ejemplo: `412 GB libres de 931 GB` + barra al 56 %.
+- **Panel "Almacenamiento"** (debajo de Modelos): una fila por sistema de
+  archivos con barra, tamaño total, usado, libre y porcentaje. La fila que
+  contiene el directorio de modelos va marcada.
+- Si el disco de modelos baja del 10 % libre, la tarjeta se pinta en ámbar y
+  aparece un aviso: "Quedan 38 GB: un modelo de 70B no cabrá".
+
+#### Contrato de `GET /api/v1/disk`
+
+```json
+{
+  "models_dir": "/home/skull/.ollama/models",
+  "models_dir_exists": true,
+  "remote": false,
+  "filesystems": [
+    {
+      "mount": "/",
+      "device": "/dev/nvme0n1p2",
+      "fstype": "btrfs",
+      "total_bytes": 1000204886016,
+      "free_bytes": 412000000000,
+      "used_bytes": 588204886016,
+      "used_percent": 58.8,
+      "contains_models": true
+    }
+  ]
+}
+```
+
+Reglas de implementación:
+
+1. **Sin dependencias externas.** Linux/macOS con `syscall.Statfs` en un archivo
+   con `//go:build unix`; Windows con `syscall.GetDiskFreeSpaceEx` en un archivo
+   con `//go:build windows`. Nada de `gopsutil`.
+2. En Linux se enumeran los sistemas de archivos de `/proc/self/mounts` y se
+   descartan los virtuales: `tmpfs`, `proc`, `sysfs`, `devtmpfs`, `cgroup*`,
+   `overlay`, `squashfs`, `fuse.*`, `nsfs`, `ramfs`.
+3. En macOS se consultan `/` y cada entrada de `/Volumes/*`.
+4. En Windows, `GetLogicalDrives` y solo las unidades con tipo fijo o extraíble.
+5. `models_dir` sale de `BALLAST_MODELS_DIR`, luego de `OLLAMA_MODELS`, y por
+   defecto `~/.ollama/models`. Si no existe, se usa el directorio personal y
+   `models_dir_exists = false`.
+6. `used_bytes = total_bytes - free_bytes` (sin contar reservados del sistema,
+   que es lo que el usuario percibe como "libre").
+7. Si `--ollama` apunta a otra máquina, `remote = true` y la UI muestra un aviso:
+   el disco medido es el del equipo donde corre Ballast, no el de Ollama.
+8. La llamada es de solo lectura y se cachea 10 s para no martillear el disco.
+
 ---
 
 ## 9. Requisitos no funcionales
@@ -396,6 +452,8 @@ clientes.
 - **Portabilidad**: un binario por plataforma. Sin Go, Node ni Python en destino.
 - **Arranque**: < 200 ms hasta la primera pintada.
 - **Consumo**: < 25 MB de RAM en reposo, < 1 % de CPU, BD < 5 MB por año.
+- **Espacio en disco**: la medición se hace en el equipo donde corre Ballast y
+  nunca bloquea la interfaz; si falla, se oculta el panel sin romper nada.
 - **Privacidad**: cero telemetría. Solo sale a Internet para los pulls pedidos.
 - **Seguridad**: escucha en `127.0.0.1`. Si se expone en LAN, token obligatorio.
 - **No interferencia**:
@@ -424,7 +482,9 @@ reales con su estado.
 Expulsar, cargar, keep-alive y fijar. Estado en vivo por SSE.
 
 **Aceptación**: Expulsar sobre un modelo cargado vacía `/api/ps` en < 2 s y la
-tarjeta desaparece sin recargar.
+tarjeta desaparece sin recargar. Además, `GET /api/v1/disk` devuelve los discos
+reales del equipo (al menos el que contiene `~/.ollama/models`), con total, libre
+y usado coherentes con `df -h`, y el panel de Almacenamiento los pinta.
 
 ### F2 — Descargas por nombre (1 día)
 

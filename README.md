@@ -69,7 +69,8 @@ make vet test
 ```
 
 La especificación completa, con modelo de datos, API y criterios de aceptación,
-está en [SPEC.md](SPEC.md).
+está en [SPEC.md](SPEC.md). El reparto en tareas para los agentes locales está en
+[PLAN.md](PLAN.md).
 
 ## Licencia
 
