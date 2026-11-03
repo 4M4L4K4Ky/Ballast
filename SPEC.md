@@ -58,21 +58,24 @@ que los tokens dejarán de contarse y ofrece la importación desde el log.
 - Escucha en `127.0.0.1:11435` por defecto, configurable.
 - Reenvía **todo** a `OLLAMA_HOST` (`127.0.0.1:11434`): rutas nativas `/api/*` y
   compatibles `/v1/*`.
-- De cada petición guarda: modelo, endpoint, cliente (`User-Agent` + IP),
-  `stream` sí/no, número de mensajes y caracteres del prompt. **Nunca el
-  contenido.**
-- De la respuesta extrae `prompt_eval_count`, `eval_count`, `total_duration`,
-  `load_duration` y `eval_duration`.
+- De cada petición guarda: fecha, método, ruta, modelo, estado HTTP, si fue
+  streaming, tokens de entrada y salida, duración y error. **Nunca el
+  contenido** del prompt ni de la respuesta.
+- De la respuesta extrae `prompt_eval_count`, `eval_count` y `total_duration`
+  de Ollama, o `usage.prompt_tokens` / `usage.completion_tokens` de la API
+  compatible con OpenAI.
   - Sin streaming: del JSON de respuesta.
-  - Con streaming: del último objeto con `"done": true`.
-- **Reglas de no interferencia** (críticas):
-  - Es un `httputil.ReverseProxy` puro: no reescribe cuerpos, no añade cabeceras
-    propias, no reintenta, no impone timeouts por debajo de los de Ollama.
-  - El streaming se reenvía con `FlushInterval: -1`; nunca se acumula el cuerpo
-    en memoria.
-  - La escritura de métricas va a una cola en memoria con un *worker*. Si SQLite
-    falla o va lento, **se descarta la métrica** y la petición continúa.
-  - Si el proxy no puede conectar con Ollama, devuelve el error tal cual.
+  - Con streaming: del último objeto con `"done": true` o `usage`.
+- **Reglas de no interferencia** (críticas), tal como están implementadas:
+  - Proxy con transporte propio: no reescribe cuerpos, no añade cabeceras
+    propias, no reintenta y no impone timeouts por debajo de los de Ollama.
+  - El streaming (NDJSON y SSE) se vuelca al cliente con `Flush` en cada
+    escritura; nunca se acumula el cuerpo entero. Solo se guardan los últimos
+    256 KB para leer los contadores.
+  - Las métricas van a una cola en memoria de 256 elementos con un *worker*.
+    Si SQLite falla o la cola se llena, **se descarta la métrica** y la
+    petición continúa.
+  - Si el proxy no puede conectar con Ollama, devuelve `502` con el error.
 - Botón **"Configurar mis clientes"** que muestra el snippet exacto (por ejemplo
   el `baseURL` de `opencode.json`) y avisa si detecta tráfico directo por
   `:11434` que se está perdiendo.
@@ -350,16 +353,17 @@ claro opcional.
 
 ### 8.1 Resumen (pantalla inicial)
 
-- 5 tarjetas: modelos instalados · modelos en VRAM · VRAM usada / total ·
-  **total de los modelos en disco** · tokens totales (con delta de 24 h).
-  La tarjeta de tamaño es la suma de los modelos, no el disco del sistema: el
-  disco va aparte, en el panel de Almacenamiento (§8.7).
+- 5 tarjetas: modelos instalados · modelos en VRAM · VRAM usada · **total de los
+  modelos en disco** · **tokens de hoy**. La tarjeta de tamaño es la suma de los
+  modelos, no el disco del sistema: el disco va aparte, en el panel de
+  Almacenamiento (§8.7). La de tokens solo aparece si la base de datos funciona.
 - Barra de modelos cargados: tamaño en VRAM, tiempo restante de `keep_alive`,
   candado si está fijado, botón **Expulsar** y botón destacado **Liberar toda la
   VRAM** para dejar la GPU libre al terminar de trabajar. La barra solo aparece
   si hay algo cargado.
-- Gráfico de área de tokens por día (30 días), una serie por modelo.
-- Últimos 10 eventos, incluidos los `auto-unload` con su motivo.
+- Gráfica de memoria de la GPU en tiempo real (§8.8).
+- Panel de consumo: barras de tokens por día (14 días) y tabla por modelo.
+- Últimos 10 eventos, incluidos los `auto-unload` con su motivo (pendiente).
 
 ### 8.2 Modelos
 
@@ -395,10 +399,17 @@ nombre) · Copiar nombre.
 
 ### 8.4 Uso
 
-- Filtros: modelo, cliente, rango de fechas.
-- Tabla agregada: peticiones, tokens de entrada, de salida, total, tok/s medio.
-- Comparativa de velocidad entre modelos (`eval_duration`).
-- Exportar CSV.
+Implementado (v0.1):
+
+- Panel **Consumo** bajo la tabla de modelos.
+- Barras de los últimos 14 días (entrada + salida por día).
+- Tabla por modelo: peticiones, tokens de entrada, de salida, total y último uso.
+- `GET /api/v1/usage/export.csv` descarga todo el histórico.
+- **Límite**: solo se cuenta lo que pasa por `:11435`. Las peticiones que van
+  directas a Ollama (`:11434`) no se ven.
+
+Pendiente: filtros por fecha y cliente, tok/s medio y comparativa de velocidad
+entre modelos (`eval_duration`).
 
 ### 8.5 Ajustes
 

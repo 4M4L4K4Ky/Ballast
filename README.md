@@ -1,7 +1,8 @@
 # Ballast
 
 Dashboard local para [Ollama](https://ollama.com): ve tus modelos, expúlsalos de
-la VRAM con un clic y —próximamente— contabiliza los tokens gastados con cada uno.
+la VRAM con un clic, mira la memoria real de la GPU en vivo y contabiliza los
+tokens que gastas con cada modelo.
 
 Un solo binario. Sin Node, sin Python, sin contenedores, sin telemetría.
 
@@ -11,22 +12,40 @@ go build -o ballast ./cmd/ballast
 # abre http://127.0.0.1:11435
 ```
 
+## Qué hace
+
+- **Modelos**: lista con tamaño, cuantización, contexto y capacidades; buscador,
+  ordenación y ficha completa (familia, arquitectura, capas, digest…).
+- **VRAM**: qué está cargado, cuánto ocupa, cuándo se libera solo, botón
+  **Expulsar** por modelo y **Liberar toda la VRAM** de golpe.
+- **Memoria real de la GPU**: gráfica en vivo de 15 minutos con lo que ocupa
+  Ollama y lo que ocupa el resto del sistema, leído de sysfs. Sin `radeontop`.
+- **Modo juego**: libera la GPU y bloquea las cargas desde Ballast hasta que lo
+  desactives.
+- **Almacenamiento**: espacio total, usado y libre de cada disco, con el de los
+  modelos marcado y aviso si queda poco.
+- **Consumo**: proxy en `:11435` que cuenta tokens de entrada y salida por
+  modelo, gráfica de 14 días y exportación a CSV.
+
+## El puerto importa
+
+Ballast escucha en **11435** y reenvía todo lo que no es su propia API a Ollama
+en **11434**. Para que el contador de tokens vea algo, tus clientes tienen que
+apuntar a `http://127.0.0.1:11435`:
+
+```sh
+export OLLAMA_HOST=http://127.0.0.1:11435
+```
+
+Si van directos a `11434`, funcionan igual pero Ballast no los cuenta.
+
 ## Estado
 
-Versión temprana. Lo que ya funciona:
-
-- Lista de modelos con tamaño, cuantización, contexto y capacidades.
-- Estado en vivo: qué modelos están en VRAM y cuánta memoria ocupan.
-- **Expulsar** un modelo de la VRAM (`keep_alive: 0`).
-- Interfaz oscura, responsive, sin dependencias de frontend.
-
-Lo que viene, por fases (ver [SPEC.md](SPEC.md)):
+Versión temprana pero usable a diario. Pendiente (ver [PLAN.md](PLAN.md)):
 
 | Fase | Contenido |
 |---|---|
-| F1 | Cargar modelos, keep-alive, fijar contra auto-expulsión |
 | F2 | Descargar modelos por nombre con progreso en vivo |
-| F3 | Proxy `:11435 → :11434` y contabilidad de tokens por modelo |
 | F4 | Auto-expulsión segura (nunca interrumpe trabajo en curso) |
 | F5 | Releases multiplataforma, `install.sh`, Docker |
 | F6 | Catálogo y búsqueda online (aplazado) |
@@ -51,9 +70,13 @@ ballast [flags]
 
 Variables de entorno equivalentes: `BALLAST_LISTEN`, `BALLAST_OLLAMA_URL`.
 
+Datos en `~/.local/share/ballast/` (o `BALLAST_DATA_DIR`): `ballast.db` con el
+histórico de consumo y `state.json` con el modo juego.
+
 ## Cómo está hecho
 
-- **Go** con la biblioteca estándar. Binario estático de ~8 MB, sin CGO.
+- **Go** con la biblioteca estándar. Binario estático de ~12 MB, sin CGO.
+- **SQLite en Go puro** (`modernc.org/sqlite`), la única dependencia externa.
 - **HTML + CSS + JavaScript** sin framework ni paso de build. Todo va embebido
   con `embed.FS`.
 - Pensado para no estorbar: si Ballast se cae, Ollama y tus clientes siguen

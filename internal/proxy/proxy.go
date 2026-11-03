@@ -24,6 +24,7 @@ type Proxy struct {
 	target *url.URL
 	client *http.Client
 	store  *store.Store
+	queue  chan store.Record
 }
 
 // New crea el proxy. store puede ser nil: en ese caso no se guardan métricas.
@@ -39,10 +40,28 @@ func New(target *url.URL, st *store.Store) *Proxy {
 		ResponseHeaderTimeout: 10 * time.Minute,
 		ExpectContinueTimeout: time.Second,
 	}
-	return &Proxy{
+	p := &Proxy{
 		target: target,
 		client: &http.Client{Transport: transport},
 		store:  st,
+	}
+	if st != nil {
+		// Cola con worker: la escritura en SQLite nunca frena la petición.
+		p.queue = make(chan store.Record, 256)
+		go p.worker()
+	}
+	return p
+}
+
+// worker guarda las métricas en segundo plano. Si la cola se llena, se
+// descartan: la petición del usuario ya se ha completado.
+func (p *Proxy) worker() {
+	for record := range p.queue {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		if err := p.store.Insert(ctx, record); err != nil {
+			log.Printf("no se pudo guardar la métrica: %v", err)
+		}
+		cancel()
 	}
 }
 
@@ -104,10 +123,11 @@ func (p *Proxy) record(r *http.Request, status int, prompt, completion, duration
 }
 
 func (p *Proxy) recordModel(r *http.Request, status int, model string, prompt, completion, duration int64, start time.Time, streaming bool, errText string) {
-	if p.store == nil {
+	if p.queue == nil {
 		return
 	}
-	record := store.Record{
+	select {
+	case p.queue <- store.Record{
 		TS:               start.UnixMilli(),
 		Method:           r.Method,
 		Path:             r.URL.Path,
@@ -118,11 +138,9 @@ func (p *Proxy) recordModel(r *http.Request, status int, model string, prompt, c
 		CompletionTokens: completion,
 		TotalDurationMS:  duration,
 		Error:            truncate(errText, 300),
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if err := p.store.Insert(ctx, record); err != nil {
-		log.Printf("no se pudo guardar la métrica: %v", err)
+	}:
+	default:
+		log.Printf("cola de métricas llena: se descarta %s %s", r.Method, r.URL.Path)
 	}
 }
 

@@ -10,16 +10,21 @@
 
 ## 1. Punto de partida
 
-Ya existe y funciona (commit `e359c35`):
+Funciona a día de hoy (último commit `19a821a`):
 
 - Binario Go que sirve la UI en `127.0.0.1:11435`.
-- `GET /api/v1/status`, `/models`, `/ps` y `POST /models/{name}/unload`.
-- UI oscura con 13 modelos reales, estado en VRAM y botón Expulsar probado.
+- API completa del dashboard: `status`, `models`, `models/{name}`, `ps`,
+  `memory`, `disk`, `game-mode`, `usage/*`, `load`, `unload`, `vram/release`.
+- UI con buscador, ordenación, ficha del modelo, gráfica de memoria real,
+  modo juego, panel de discos y panel de consumo.
+- Proxy `:11435 → :11434` con contador de tokens en SQLite.
 - `install.sh`, `Makefile`, workflow de release y licencia.
 
-Lo que **no** hay todavía: SQLite, proxy, tokens, descargas, auto-expulsión y la
-medición real de discos. La tarjeta "Disco" actual suma el tamaño de los modelos;
-es provisional y la sustituye la tarea T1.
+Lo que **no** hay todavía: descargas con progreso (T2.2/T2.3), auto-expulsión
+(T4), releases publicadas (T5) y catálogo online (aplazado).
+
+La tarjeta "Total modelos" es la suma del tamaño de los modelos, no el disco: el
+disco real está en el panel de Almacenamiento (T1.1/T1.2).
 
 ### Cómo compilar y probar
 
@@ -43,8 +48,10 @@ df -h ~/.ollama/models          # referencia para validar /api/v1/disk
 ## 2. Reglas para los agentes
 
 1. **No tocar `SPEC.md`** salvo que una tarea lo pida explícitamente.
-2. **No añadir dependencias.** Solo biblioteca estándar de Go. Si una tarea
-   parece necesitar un paquete externo, la tarea está mal definida: avisa.
+2. **No añadir dependencias.** Solo biblioteca estándar de Go, con una
+   excepción aprobada: `modernc.org/sqlite` (Go puro, sin CGO) para el
+   histórico de consumo. Si una tarea parece necesitar otro paquete, la tarea
+   está mal definida: avisa.
 3. **No romper lo que ya funciona.** Antes de commitear: `make build` y
    `curl localhost:11435/api/v1/status` deben seguir respondiendo.
 4. **Un commit por tarea**, mensaje en español, sin mezclar tareas.
@@ -90,6 +97,8 @@ dime si cumple el DoD de PLAN.md.
 
 #### T1.1 · Endpoint `GET /api/v1/disk`
 
+> **Estado: hecha (commit `87720b3`).**
+
 - **Objetivo**: devolver total, libre y usado de cada disco real, y marcar el que
   contiene el directorio de modelos.
 - **Archivos**: `internal/disk/disk_unix.go`, `internal/disk/disk_windows.go`,
@@ -108,6 +117,8 @@ dime si cumple el DoD de PLAN.md.
 
 #### T1.2 · UI de almacenamiento
 
+> **Estado: hecha (commit `87720b3`).**
+
 - **Objetivo**: añadir el panel "Almacenamiento" con los discos reales. La
   tarjeta "Total modelos" se queda como está: es la suma del tamaño de los
   modelos, no el disco.
@@ -119,6 +130,8 @@ dime si cumple el DoD de PLAN.md.
 
 #### T1.3 · Cargar modelo y keep-alive
 
+> **Estado: hecha (commit `067d66a`).**
+
 - **Objetivo**: `POST /api/v1/models/{name}/load` con `keep_alive` y
   `PUT /api/v1/models/{name}/keepalive`.
 - **Archivos**: `cmd/ballast/main.go` (o `internal/api/` si ya se migró).
@@ -129,11 +142,52 @@ dime si cumple el DoD de PLAN.md.
   ```
   Y en la UI, un botón "Cargar" en los modelos descargados.
 
+#### T1.4 · Gráfica de memoria real de la GPU
+
+> **Estado: hecha (commit `4331384`).**
+
+- **Objetivo**: medir la VRAM de verdad, no solo lo que Ollama declara, y
+  dibujarla en vivo.
+- **Archivos**: `internal/mem/*`, `cmd/ballast/main.go`, `web/*`.
+- **Aceptación**:
+  ```sh
+  curl -s 'localhost:11435/api/v1/memory?since=0' | python3 -m json.tool
+  cat /sys/class/drm/card1/device/mem_info_vram_used
+  ```
+  El `used_bytes` de la respuesta coincide con sysfs (±1 muestra) y la gráfica
+  avanza al cargar y expulsar un modelo.
+
+#### T1.5 · Modo juego
+
+> **Estado: hecha (commit `4331384`).**
+
+- **Objetivo**: liberar la GPU y bloquear cargas desde Ballast hasta desactivarlo.
+- **Archivos**: `internal/state/state.go`, `cmd/ballast/main.go`, `web/*`.
+- **Aceptación**:
+  ```sh
+  curl -s -X POST localhost:11435/api/v1/game-mode -d '{"enabled":true}'
+  curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+    localhost:11435/api/v1/models/qwen3:1.7b/load -d '{"keep_alive":"5m"}'  # 423
+  ```
+  Tras reiniciar el binario, `status.game_mode` sigue en `true`.
+
+#### T1.6 · Buscador, orden, copiar nombre y ficha
+
+> **Estado: hecha (commit `856a296`).**
+
+- **Objetivo**: encontrar un modelo entre muchos y ver sus detalles sin salir de
+  la página.
+- **Archivos**: `web/*`, `cmd/ballast/main.go` (`GET /models/{name}`).
+- **Aceptación**: `/` enfoca el buscador; pulsar una cabecera ordena; pulsar una
+  fila abre la ficha con arquitectura, capas y parámetros del Modelfile.
+
 ---
 
 ### Fase 2 — Persistencia y descargas
 
 #### T2.1 · SQLite y migraciones
+
+> **Estado: hecha (commit `19a821a`).**
 
 - **Objetivo**: crear la base de datos con el esquema de `SPEC.md` §5 al
   arrancar, de forma idempotente.
@@ -146,9 +200,18 @@ dime si cumple el DoD de PLAN.md.
 
 #### T2.2 · Descarga por nombre con progreso
 
+> **Prueba de fuego actual.** Es la primera tarea que escribe estado nuevo en
+> disco, habla con un flujo largo de Ollama y tiene que poder cancelarse a
+> mitad sin dejar basura. Si el stack aguanta esto, aguanta lo que queda.
+
 - **Objetivo**: `POST /api/v1/models/pull` + `GET /api/v1/pulls/{id}/events` (SSE)
   y `DELETE /api/v1/pulls/{id}`.
 - **Archivos**: `internal/api/pull.go`, `cmd/ballast/main.go`.
+- **Reglas**:
+  - El flujo de Ollama (`/api/pull`) es NDJSON; se reenvía al navegador como SSE
+    con `status`, `completed`, `total`, `percent` y `done`.
+  - Cancelar cierra el contexto de la petición a Ollama. No se borra nada a mano.
+  - Un error de red no deja el modelo a medias: se informa y se puede reintentar.
 - **Aceptación**: descargar `qwen3:0.6b`, ver el porcentaje avanzar y cancelar a
   mitad; el modelo no queda corrupto (`ollama list` coherente).
 
@@ -164,6 +227,8 @@ dime si cumple el DoD de PLAN.md.
 
 #### T3.1 · Proxy de paso
 
+> **Estado: hecha (commit `19a821a`).**
+
 - **Objetivo**: escuchar `:11435` y reenviar a Ollama todo lo que no sea
   `/api/v1/*` ni un archivo estático.
 - **Archivos**: `internal/proxy/proxy.go`, `cmd/ballast/main.go`.
@@ -176,6 +241,8 @@ dime si cumple el DoD de PLAN.md.
 
 #### T3.2 · Extracción de contadores
 
+> **Estado: hecha (commit `19a821a`).**
+
 - **Objetivo**: guardar `prompt_eval_count`, `eval_count` y duraciones de cada
   petición, en modo normal y en streaming (`done: true`).
 - **Archivos**: `internal/proxy/metrics.go`.
@@ -183,6 +250,8 @@ dime si cumple el DoD de PLAN.md.
   con los `eval_count` devueltos por Ollama.
 
 #### T3.3 · Endpoints de uso y gráfico
+
+> **Estado: hecha (commit `19a821a`).**
 
 - **Objetivo**: `/usage/summary`, `/usage/series`, `/usage/export.csv` y el
   gráfico de tokens por día en el Resumen.
@@ -233,24 +302,46 @@ dime si cumple el DoD de PLAN.md.
 ## 5. Orden recomendado
 
 ```
-T1.1 → T1.2 → T1.3 → T2.1 → T2.2 → T2.3
+T1.1 → T1.2 → T1.3 → T1.4 → T1.5 → T1.6
+     → T2.1 → T2.2 → T2.3
      → T3.1 → T3.2 → T3.3 → T4.1 → T4.2 → T4.3 → T5.1 → T5.2
 ```
 
-T1.1 y T1.2 son la **prueba de fuego**: tocan backend, frontend y verificación
-real contra el sistema, sin riesgo de romper nada de lo que ya funciona.
+Hechas: T1.1–T1.6, T2.1, T3.1–T3.3.
+
+La **prueba de fuego** ahora es **T2.2**: primera escritura de estado nuevo,
+flujo largo de Ollama y cancelación a mitad. Las anteriores (T1.1/T1.2) ya
+pasaron y quedaron verificadas contra `df -h` y capturas reales.
 
 ---
 
 ## 6. Bitácora de la prueba de fuego
 
-Rellénala según avancen los agentes.
-
 | Tarea | Agente | Estado | Verificado con | Notas |
 |---|---|---|---|---|
-| T1.1 | | pendiente | `df -h` | |
-| T1.2 | | pendiente | captura | |
-| T1.3 | | pendiente | `/api/ps` | |
+| T1.1 | sesión principal | hecha | `curl /api/v1/disk` + `df -h` | total y libre coinciden; `/` marcado como `contains_models` |
+| T1.2 | sesión principal | hecha | captura de pantalla | barras y aviso de poco espacio; sin errores en consola |
+| T1.3 | sesión principal | hecha | `curl /api/ps` | carga con `keep_alive` y expulsión desde tabla y ficha |
+| T1.4 | sesión principal | hecha | `mem_info_vram_used` | ±1 muestra; la gráfica responde a cargar y expulsar |
+| T1.5 | sesión principal | hecha | `curl` con código 423 | el estado sobrevive al reinicio (`state.json`) |
+| T1.6 | sesión principal | hecha | navegador | buscador, orden persistente y ficha desde `/api/show` |
+| T2.1 | sesión principal | hecha | doble arranque | esquema idempotente; `ballast.db` en `~/.local/share/ballast` |
+| T2.2 | — | **siguiente** | `ollama list` | descarga con progreso y cancelación a mitad |
+| T3.1 | sesión principal | hecha | `curl /api/tags`, `/v1/models` | streaming NDJSON llega trozo a trozo |
+| T3.2 | sesión principal | hecha | SQLite + `/usage/summary` | 15/8 sin streaming, 14/20 con streaming; la suma cuadra |
+| T3.3 | sesión principal | hecha | navegador + CSV | barras de 14 días y tabla por modelo; CSV correcto |
+
+### Lo que ya está aprendido
+
+- El proxy no puede usar `httputil.ReverseProxy` con `FlushInterval: -1` y a la
+  vez leer los contadores: hace falta un `io.Writer` propio que vacíe en cada
+  escritura y guarde solo la cola. Es lo que hay en `internal/proxy`.
+- La VRAM del compositor (~1,6–2,1 GB) no es de Ollama: la gráfica la separa en
+  "Otros" para no confundirla con modelos cargados.
+- `used_bytes = total - disponible` da un porcentaje mayor que `df` porque
+  incluye los reservados de root. Es lo que el usuario percibe como ocupado.
+- El contador solo ve `:11435`. Para que OpenCode cuente, hay que apuntarlo con
+  `OLLAMA_HOST=http://127.0.0.1:11435`.
 
 ### Señales de que el stack funciona
 
