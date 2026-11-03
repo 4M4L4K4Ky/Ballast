@@ -9,7 +9,7 @@ const el = {
   models: document.getElementById('stat-models'),
   loaded: document.getElementById('stat-loaded'),
   vram: document.getElementById('stat-vram'),
-  disk: document.getElementById('stat-disk'),
+  total: document.getElementById('stat-total'),
   body: document.getElementById('models-body'),
   toast: document.getElementById('toast'),
 };
@@ -86,12 +86,12 @@ async function refresh() {
 function render(models) {
   const loaded = models.filter((m) => m.loaded);
   const vram = loaded.reduce((acc, m) => acc + (m.size_vram || 0), 0);
-  const disk = models.reduce((acc, m) => acc + (m.size || 0), 0);
+  const totalSize = models.reduce((acc, m) => acc + (m.size || 0), 0);
 
   el.models.textContent = models.length;
   el.loaded.textContent = loaded.length;
   el.vram.textContent = vram ? bytes(vram) : '0 B';
-  el.disk.textContent = bytes(disk);
+  el.total.textContent = bytes(totalSize);
 
   if (!models.length) {
     el.body.innerHTML = '<tr><td colspan="7" class="empty">No hay modelos instalados.</td></tr>';

@@ -347,7 +347,9 @@ claro opcional.
 ### 8.1 Resumen (pantalla inicial)
 
 - 5 tarjetas: modelos instalados · modelos en VRAM · VRAM usada / total ·
-  **disco de modelos (libre / total)** · tokens totales (con delta de 24 h).
+  **total de los modelos en disco** · tokens totales (con delta de 24 h).
+  La tarjeta de tamaño es la suma de los modelos, no el disco del sistema: el
+  disco va aparte, en el panel de Almacenamiento (§8.7).
 - Barra de modelos cargados: tamaño en VRAM, tiempo restante de `keep_alive`,
   candado si está fijado, botón **Expulsar**.
 - Gráfico de área de tokens por día (30 días), una serie por modelo.
@@ -396,12 +398,14 @@ clientes.
 Requisito añadido para la prueba de fuego: el dashboard debe mostrar el espacio
 **total, libre y ocupado** de los discos, no solo lo que suman los modelos.
 
-- **Tarjeta de Resumen**: disco donde viven los modelos, con `libre de total` y
-  una barra de ocupación. Ejemplo: `412 GB libres de 931 GB` + barra al 56 %.
+- **Resumen**: el espacio de disco **no** ocupa tarjeta propia. La tarjeta
+  "Total modelos" suma el tamaño de los modelos; el disco vive en este panel.
+- **Encabezado del panel**: disco donde viven los modelos, con
+  `412 GB libres de 931 GB` y una barra de ocupación.
 - **Panel "Almacenamiento"** (debajo de Modelos): una fila por sistema de
   archivos con barra, tamaño total, usado, libre y porcentaje. La fila que
   contiene el directorio de modelos va marcada.
-- Si el disco de modelos baja del 10 % libre, la tarjeta se pinta en ámbar y
+- Si el disco de modelos baja del 10 % libre, el panel se pinta en ámbar y
   aparece un aviso: "Quedan 38 GB: un modelo de 70B no cabrá".
 
 #### Contrato de `GET /api/v1/disk`

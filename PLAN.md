@@ -108,8 +108,9 @@ dime si cumple el DoD de PLAN.md.
 
 #### T1.2 · UI de almacenamiento
 
-- **Objetivo**: sustituir la tarjeta "Disco" provisional por el disco real y
-  añadir el panel "Almacenamiento".
+- **Objetivo**: añadir el panel "Almacenamiento" con los discos reales. La
+  tarjeta "Total modelos" se queda como está: es la suma del tamaño de los
+  modelos, no el disco.
 - **Archivos**: `web/index.html`, `web/styles.css`, `web/app.js`.
 - **Detalle**: tarjeta con `libre de total` y barra; panel con una fila por
   sistema de archivos; ámbar si queda menos del 10 % libre.
