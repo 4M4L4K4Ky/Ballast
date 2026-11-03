@@ -365,6 +365,21 @@ Tabla ordenable y filtrable:
 | Modelo | Tamaño | Quant | Contexto | Capacidades | Instalado | Tokens desde instalación | Estado | Acciones |
 |---|---|---|---|---|---|---|---|---|
 
+Implementado ya (v0.1):
+
+- **Buscador** por nombre, familia, quantización y capacidades. Varios términos
+  separados por espacios se combinan con AND. Atajo `/` para enfocar.
+- **Ordenación** pulsando las cabeceras (nombre, tamaño, contexto, estado), con
+  indicador de dirección. Se recuerda en `localStorage`.
+- **Copiar nombre** con un botón en la fila y en la ficha.
+- **Ficha lateral** al pulsar una fila: estado, tamaño, VRAM, tiempo hasta que se
+  libere, familia, arquitectura, parámetros, quantización, contexto, embedding,
+  capas, cabezas de atención, formato, capacidades, digest, fecha y parámetros
+  del Modelfile. Se sirve desde `GET /api/v1/models/:name` (`/api/show`).
+  La ficha se actualiza sola y permite cargar/expulsar sin cerrarla.
+
+Pendiente: columna "Tokens desde instalación" (fase 3), Fijar y Eliminar.
+
 Acciones: Cargar · Expulsar · Fijar · Keep-alive · Eliminar (confirmando el
 nombre) · Copiar nombre.
 

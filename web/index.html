@@ -60,19 +60,29 @@
 
     <section class="panel">
       <div class="panel-head">
-        <h2>Modelos</h2>
-        <span class="hint" id="refresh-hint">Actualizando cada 5 s</span>
+        <div class="panel-title">
+          <h2>Modelos</h2>
+          <span class="hint" id="models-hint">—</span>
+        </div>
+        <div class="search">
+          <svg viewBox="0 0 24 24" aria-hidden="true" width="15" height="15">
+            <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/>
+            <path d="M16.5 16.5 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <input id="search" type="search" placeholder="Buscar modelo…  ( / )"
+                 autocomplete="off" spellcheck="false" aria-label="Buscar modelo">
+        </div>
       </div>
       <div class="table-wrap">
         <table id="models">
           <thead>
             <tr>
-              <th>Modelo</th>
-              <th>Tamaño</th>
+              <th data-sort="name" class="sortable">Modelo</th>
+              <th data-sort="size" class="sortable">Tamaño</th>
               <th>Quant</th>
-              <th>Contexto</th>
+              <th data-sort="context" class="sortable">Contexto</th>
               <th>Capacidades</th>
-              <th>Estado</th>
+              <th data-sort="state" class="sortable">Estado</th>
               <th></th>
             </tr>
           </thead>
@@ -87,6 +97,19 @@
       Ballast no guarda prompts ni respuestas. Solo metadatos y contadores.
     </p>
   </main>
+
+  <div class="drawer-overlay" id="drawer-overlay" hidden></div>
+  <aside class="drawer" id="drawer" hidden aria-labelledby="drawer-title" aria-modal="true" role="dialog">
+    <header class="drawer-head">
+      <div class="drawer-title-wrap">
+        <p class="drawer-eyebrow" id="drawer-state">—</p>
+        <h2 id="drawer-title">—</h2>
+      </div>
+      <button class="icon" id="drawer-close" aria-label="Cerrar ficha">✕</button>
+    </header>
+    <div class="drawer-body" id="drawer-body"></div>
+    <footer class="drawer-actions" id="drawer-actions"></footer>
+  </aside>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="/app.js"></script>

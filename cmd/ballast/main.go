@@ -63,6 +63,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
 	mux.HandleFunc("GET /api/v1/models", s.handleModels)
+	mux.HandleFunc("GET /api/v1/models/{name}", s.handleModel)
 	mux.HandleFunc("GET /api/v1/ps", s.handlePS)
 	mux.HandleFunc("POST /api/v1/models/{name}/unload", s.handleUnload)
 	mux.HandleFunc("POST /api/v1/models/{name}/load", s.handleLoad)
@@ -125,10 +126,13 @@ func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 type modelDetails struct {
-	Family            string `json:"family"`
-	ParameterSize     string `json:"parameter_size"`
-	QuantizationLevel string `json:"quantization_level"`
-	ContextLength     int64  `json:"context_length"`
+	ParentModel       string   `json:"parent_model,omitempty"`
+	Format            string   `json:"format,omitempty"`
+	Family            string   `json:"family"`
+	Families          []string `json:"families,omitempty"`
+	ParameterSize     string   `json:"parameter_size"`
+	QuantizationLevel string   `json:"quantization_level"`
+	ContextLength     int64    `json:"context_length"`
 }
 
 type model struct {
@@ -150,6 +154,107 @@ func (s *server) handleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"models": models})
+}
+
+// modelDetail es la ficha completa de un modelo: lo que da /api/tags más lo
+// que solo aparece en /api/show (arquitectura, capas, parámetros del Modelfile).
+type modelDetail struct {
+	model
+	Architecture    string   `json:"architecture,omitempty"`
+	Format          string   `json:"format,omitempty"`
+	Families        []string `json:"families,omitempty"`
+	ParameterCount  int64    `json:"parameter_count,omitempty"`
+	ContextLength   int64    `json:"context_length,omitempty"`
+	EmbeddingLength int64    `json:"embedding_length,omitempty"`
+	BlockCount      int64    `json:"block_count,omitempty"`
+	HeadCount       int64    `json:"head_count,omitempty"`
+	Parameters      string   `json:"parameters,omitempty"`
+}
+
+// handleModel devuelve la ficha de un modelo concreto.
+func (s *server) handleModel(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "falta el nombre del modelo"})
+		return
+	}
+
+	var show struct {
+		Details      modelDetails   `json:"details"`
+		Capabilities []string       `json:"capabilities"`
+		Parameters   string         `json:"parameters"`
+		ModelInfo    map[string]any `json:"model_info"`
+	}
+	if err := s.ollamaJSON(r.Context(), http.MethodPost, "/api/show", map[string]string{"model": name}, &show); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+
+	models, err := s.listModels(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		return
+	}
+	var found *model
+	for i := range models {
+		if models[i].Name == name {
+			found = &models[i]
+			break
+		}
+	}
+	if found == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "modelo no encontrado: " + name})
+		return
+	}
+
+	resp := modelDetail{
+		model:           *found,
+		Architecture:    infoString(show.ModelInfo, "general.architecture"),
+		Format:          show.Details.Format,
+		Families:        show.Details.Families,
+		ParameterCount:  infoInt(show.ModelInfo, ".parameter_count"),
+		ContextLength:   infoInt(show.ModelInfo, ".context_length"),
+		EmbeddingLength: infoInt(show.ModelInfo, ".embedding_length"),
+		BlockCount:      infoInt(show.ModelInfo, ".block_count"),
+		HeadCount:       infoInt(show.ModelInfo, ".attention.head_count"),
+		Parameters:      strings.TrimSpace(show.Parameters),
+	}
+	// La ficha de /api/show es más rica que la de /api/tags; se prefiere.
+	if show.Details.Family != "" {
+		if show.Details.ContextLength == 0 {
+			show.Details.ContextLength = resp.Details.ContextLength
+		}
+		resp.Details = show.Details
+	}
+	if len(show.Capabilities) > 0 {
+		resp.Capabilities = show.Capabilities
+	}
+	if resp.ContextLength == 0 {
+		resp.ContextLength = resp.Details.ContextLength
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// infoInt busca una clave de model_info por sufijo, sin depender de la
+// arquitectura del modelo (qwen3.context_length, llama.context_length…).
+func infoInt(info map[string]any, suffix string) int64 {
+	for k, v := range info {
+		if !strings.HasSuffix(k, suffix) {
+			continue
+		}
+		if f, ok := v.(float64); ok {
+			return int64(f)
+		}
+	}
+	return 0
+}
+
+func infoString(info map[string]any, key string) string {
+	if v, ok := info[key].(string); ok {
+		return v
+	}
+	return ""
 }
 
 func (s *server) handlePS(w http.ResponseWriter, r *http.Request) {
