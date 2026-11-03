@@ -178,9 +178,9 @@ ballast/
 - **GitHub Releases** con binarios por plataforma:
   `ballast_{version}_{os}_{arch}` (linux/darwin/windows × amd64/arm64).
 - Instalador de una línea:
-  `curl -fsSL https://raw.githubusercontent.com/<user>/ballast/main/install.sh | sh`
+  `curl -fsSL https://raw.githubusercontent.com/4M4L4K4Ky/Ballast/main/install.sh | sh`
   (detecta OS/arch, descarga, deja el binario en `~/.local/bin`).
-- `docker run -p 11435:11435 -v ~/.ballast:/data ghcr.io/<user>/ballast`
+- `docker run -p 11435:11435 -v ~/.ballast:/data ghcr.io/4m4l4k4ky/ballast`
 - Homebrew tap y winget: fase posterior.
 - Licencia MIT.
 
@@ -595,7 +595,7 @@ conocidos y con relación a "modelos locales" o a "ocupar/liberar memoria".
 **Recomendado: `ballast`** — repositorio `ballast`, binario `ballast`, comando
 `ballast --listen 127.0.0.1:11435`. Expulsar un modelo es, literalmente, soltar
 lastre. Verificado que no hay repositorio con ese nombre; el usuario de GitHub
-`ballast` existe, así que el repo iría bajo tu cuenta (`<tu-usuario>/ballast`).
+`ballast` existe, así que el repo es `https://github.com/4M4L4K4Ky/Ballast`.
 
 ---
 

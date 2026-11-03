@@ -34,7 +34,7 @@ Lo que viene, por fases (ver [SPEC.md](SPEC.md)):
 ## Instalación
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/4M4L4K4Ky/ballast/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/4M4L4K4Ky/Ballast/main/install.sh | sh
 ```
 
 Deja el binario en `~/.local/bin/ballast`.

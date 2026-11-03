@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/4M4L4K4Ky/ballast"
+	"github.com/4M4L4K4Ky/Ballast"
 )
 
 // version se sobreescribe en tiempo de compilación con -ldflags.

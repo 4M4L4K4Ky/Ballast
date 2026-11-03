@@ -2,7 +2,7 @@
 # Instalador de Ballast. Descarga el binario de la última release de GitHub.
 set -eu
 
-REPO="4M4L4K4Ky/ballast"
+REPO="4M4L4K4Ky/Ballast"
 BIN="ballast"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
