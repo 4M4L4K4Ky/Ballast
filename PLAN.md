@@ -200,7 +200,7 @@ dime si cumple el DoD de PLAN.md.
 
 #### T2.2 · Descarga por nombre con progreso
 
-> **Estado: hecha (commit `14945f2`).** Era la prueba de fuego: primera
+> **Estado: hecha (commit `13ba98f`).** Era la prueba de fuego: primera
 > escritura de estado nuevo, flujo largo de Ollama y cancelación a mitad.
 
 - **Objetivo**: `POST /api/v1/models/pull` + `GET /api/v1/pulls/{id}/events` (SSE)
@@ -216,7 +216,7 @@ dime si cumple el DoD de PLAN.md.
 
 #### T2.3 · UI de descargas
 
-> **Estado: hecha (commit `14945f2`).**
+> **Estado: hecha (commit `13ba98f`).**
 
 - **Objetivo**: campo `nombre:tag`, lista de descargas activas, cancelar.
 - **Archivos**: `web/*`.
