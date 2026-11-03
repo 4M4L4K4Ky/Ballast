@@ -1,5 +1,9 @@
 # Ballast
 
+[![Release](https://img.shields.io/github/v/release/4M4L4K4Ky/Ballast?style=flat-square)](https://github.com/4M4L4K4Ky/Ballast/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.22%2B-00ADD8.svg?style=flat-square&logo=go)](https://go.dev)
+
 Dashboard local para [Ollama](https://ollama.com): ve tus modelos, expúlsalos de
 la VRAM con un clic, mira la memoria real de la GPU en vivo y contabiliza los
 tokens que gastas con cada modelo.
@@ -20,17 +24,23 @@ go build -o ballast ./cmd/ballast
   **Expulsar** por modelo y **Liberar toda la VRAM** de golpe.
 - **Memoria real de la GPU**: gráfica en vivo de 15 minutos con lo que ocupa
   Ollama y lo que ocupa el resto del sistema, leído de sysfs. Sin `radeontop`.
-- **Modo juego**: libera la GPU y bloquea las cargas desde Ballast hasta que lo
-  desactives.
 - **Auto-expulsión**: expulsa lo que lleva N minutos sin uso, pero nunca un
   modelo fijado, uno con peticiones en vuelo ni uno recién cargado. Pausa de
   1 hora y registro de lo que ha hecho.
+- **Modo juego**: libera la GPU y bloquea las cargas desde Ballast hasta que lo
+  desactives.
 - **Almacenamiento**: espacio total, usado y libre de cada disco, con el de los
   modelos marcado y aviso si queda poco.
 - **Descargas**: botón Descargar con barra de progreso agregada y cancelación
   limpia a mitad.
 - **Consumo**: proxy en `:11435` que cuenta tokens de entrada y salida por
   modelo, gráfica de 14 días y exportación a CSV.
+
+## Capturas
+
+| Resumen | Modelos | Almacenamiento |
+|---|---|---|
+| ![Resumen](assets/screenshot-resumen.png) | ![Modelos](assets/screenshot-modelos.png) | ![Almacenamiento](assets/screenshot-almacenamiento.png) |
 
 ## El puerto importa
 
