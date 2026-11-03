@@ -22,6 +22,9 @@ go build -o ballast ./cmd/ballast
   Ollama y lo que ocupa el resto del sistema, leído de sysfs. Sin `radeontop`.
 - **Modo juego**: libera la GPU y bloquea las cargas desde Ballast hasta que lo
   desactives.
+- **Auto-expulsión**: expulsa lo que lleva N minutos sin uso, pero nunca un
+  modelo fijado, uno con peticiones en vuelo ni uno recién cargado. Pausa de
+  1 hora y registro de lo que ha hecho.
 - **Almacenamiento**: espacio total, usado y libre de cada disco, con el de los
   modelos marcado y aviso si queda poco.
 - **Descargas**: botón Descargar con barra de progreso agregada y cancelación
@@ -47,7 +50,6 @@ Versión temprana pero usable a diario. Pendiente (ver [PLAN.md](PLAN.md)):
 
 | Fase | Contenido |
 |---|---|
-| F4 | Auto-expulsión segura (nunca interrumpe trabajo en curso) |
 | F5 | Releases multiplataforma, `install.sh`, Docker |
 | F6 | Catálogo y búsqueda online (aplazado) |
 

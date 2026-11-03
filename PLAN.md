@@ -16,12 +16,13 @@ Funciona a día de hoy (último commit `19a821a`):
 - API completa del dashboard: `status`, `models`, `models/{name}`, `ps`,
   `memory`, `disk`, `game-mode`, `usage/*`, `load`, `unload`, `vram/release`.
 - UI con buscador, ordenación, ficha del modelo, gráfica de memoria real,
-  modo juego, panel de discos y panel de consumo.
+  modo juego, descargas, panel de discos, consumo y auto-expulsión.
 - Proxy `:11435 → :11434` con contador de tokens en SQLite.
+- Auto-expulsión con las seis condiciones de `SPEC.md` §6 y modelos fijados.
 - `install.sh`, `Makefile`, workflow de release y licencia.
 
-Lo que **no** hay todavía: auto-expulsión (T4), releases publicadas (T5) y
-catálogo online (aplazado).
+Lo que **no** hay todavía: releases publicadas (T5.1) y catálogo online
+(aplazado).
 
 La tarjeta "Total modelos" es la suma del tamaño de los modelos, no el disco: el
 disco real está en el panel de Almacenamiento (T1.1/T1.2).
@@ -266,10 +267,15 @@ dime si cumple el DoD de PLAN.md.
 
 #### T4.1 · Fijar modelos
 
+> **Estado: hecha.** Tabla `pinned` en SQLite y candado en la tabla y la ficha.
+
 - **Objetivo**: `PUT /api/v1/models/{name}/pinned` persistido en SQLite.
 - **Aceptación**: reiniciar Ballast y el candado sigue puesto.
 
 #### T4.2 · Política de expulsión
+
+> **Estado: hecha.** `internal/autounload` con las seis condiciones, contador en
+> vuelo en el proxy y pruebas unitarias con reloj falso.
 
 - **Objetivo**: las seis condiciones de `SPEC.md` §6, con contador de peticiones
   en vuelo por modelo y registro en `events`.
@@ -277,6 +283,8 @@ dime si cumple el DoD de PLAN.md.
   se expulsa al pasar el tiempo límite; uno libre sí, y queda registrado.
 
 #### T4.3 · UI de auto-expulsión
+
+> **Estado: hecha.** Panel con interruptor, minutos, pausa y últimos eventos.
 
 - **Objetivo**: interruptor, minutos configurables, botón "Pausar 1 hora".
 - **Aceptación**: activar, esperar el ciclo y ver la expulsión en el historial.
@@ -308,11 +316,11 @@ T1.1 → T1.2 → T1.3 → T1.4 → T1.5 → T1.6
      → T3.1 → T3.2 → T3.3 → T4.1 → T4.2 → T4.3 → T5.1 → T5.2
 ```
 
-Hechas: T1.1–T1.6, T2.1–T2.3, T3.1–T3.3.
+Hechas: T1.1–T1.6, T2.1–T2.3, T3.1–T3.3, T4.1–T4.3.
 
-La siguiente **prueba de fuego** es **T4.2**: la auto-expulsión tiene que
-distinguir un modelo con una petición en vuelo de uno abandonado, y eso solo se
-puede comprobar con tráfico real por el proxy.
+Queda la fase 5 (distribución). T5.1 necesita el repo público y el tag, que
+están en pausa por decisión del usuario; T5.2 (capturas en el README) se puede
+hacer ya.
 
 ---
 
@@ -332,6 +340,9 @@ puede comprobar con tráfico real por el proxy.
 | T3.1 | sesión principal | hecha | `curl /api/tags`, `/v1/models` | streaming NDJSON llega trozo a trozo |
 | T3.2 | sesión principal | hecha | SQLite + `/usage/summary` | 15/8 sin streaming, 14/20 con streaming; la suma cuadra |
 | T3.3 | sesión principal | hecha | navegador + CSV | barras de 14 días y tabla por modelo; CSV correcto |
+| T4.1 | sesión principal | hecha | reinicio del binario | el candado sobrevive; tabla `pinned` |
+| T4.2 | sesión principal | hecha | `ollama ps` + `events` | expulsó a los 6 min (`idle 6m0s, 0 en vuelo`); 8 pruebas unitarias con reloj falso |
+| T4.3 | sesión principal | hecha | navegador | interruptor, minutos, pausa y eventos; candado en fila y ficha |
 
 ### Lo que ya está aprendido
 

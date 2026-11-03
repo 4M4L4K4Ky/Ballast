@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -118,6 +119,25 @@ CREATE TABLE IF NOT EXISTS usage (
 );
 CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage(ts);
 CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model);
+
+CREATE TABLE IF NOT EXISTS settings (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS events (
+	id    INTEGER PRIMARY KEY AUTOINCREMENT,
+	ts    INTEGER NOT NULL,
+	type  TEXT    NOT NULL,
+	model TEXT    NOT NULL DEFAULT '',
+	detail TEXT   NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+
+CREATE TABLE IF NOT EXISTS pinned (
+	model     TEXT PRIMARY KEY,
+	pinned_at INTEGER NOT NULL
+);
 `
 
 func migrate(ctx context.Context, db *sql.DB) error {
@@ -125,7 +145,7 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	// user_version marca la versión del esquema para futuras migraciones.
-	if _, err := db.ExecContext(ctx, "PRAGMA user_version = 1"); err != nil {
+	if _, err := db.ExecContext(ctx, "PRAGMA user_version = 2"); err != nil {
 		return err
 	}
 	return nil
@@ -288,6 +308,126 @@ func (s *Store) ExportCSV(ctx context.Context, w io.Writer) error {
 		}
 	}
 	return rows.Err()
+}
+
+// ---------- ajustes ----------
+
+// Setting lee un ajuste. El segundo valor indica si existía.
+func (s *Store) Setting(ctx context.Context, key string) (string, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	var value string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	return value, err == nil, err
+}
+
+// SetSetting guarda o reemplaza un ajuste.
+func (s *Store) SetSetting(ctx context.Context, key, value string) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO settings (key, value) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+	return err
+}
+
+// ---------- modelos fijados ----------
+
+// Pinned devuelve el conjunto de modelos protegidos contra la auto-expulsión.
+func (s *Store) Pinned(ctx context.Context) (map[string]bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	rows, err := s.db.QueryContext(ctx, `SELECT model FROM pinned`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out[name] = true
+	}
+	return out, rows.Err()
+}
+
+// SetPinned protege o desprotege un modelo.
+func (s *Store) SetPinned(ctx context.Context, model string, pinned bool) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	if !pinned {
+		_, err := s.db.ExecContext(ctx, `DELETE FROM pinned WHERE model = ?`, model)
+		return err
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO pinned (model, pinned_at) VALUES (?, ?)
+		 ON CONFLICT(model) DO NOTHING`, model, time.Now().UnixMilli())
+	return err
+}
+
+// ---------- eventos ----------
+
+// Event es una entrada de la auditoría.
+type Event struct {
+	ID     int64  `json:"id"`
+	TS     int64  `json:"ts"`
+	Type   string `json:"type"`
+	Model  string `json:"model,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// AddEvent registra un evento. Un fallo aquí nunca debe romper la operación.
+func (s *Store) AddEvent(ctx context.Context, eventType, model, detail string) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO events (ts, type, model, detail) VALUES (?, ?, ?, ?)`,
+		time.Now().UnixMilli(), eventType, model, truncate(detail, 500))
+	return err
+}
+
+// Events devuelve los últimos eventos, el más reciente primero.
+func (s *Store) Events(ctx context.Context, limit int) ([]Event, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, ts, type, model, detail FROM events ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Event
+	for rows.Next() {
+		var e Event
+		if err := rows.Scan(&e.ID, &e.TS, &e.Type, &e.Model, &e.Detail); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max]
 }
 
 // Stats resume el tamaño de la base para /api/v1/status.

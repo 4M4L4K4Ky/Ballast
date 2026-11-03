@@ -309,6 +309,26 @@ Objetivo: liberar VRAM cuando no molesta, **jamás** interrumpir algo en curso.
 - Nunca se expulsa el modelo que el usuario acaba de cargar desde la UI en los
   últimos 10 minutos.
 
+### 6.4 Implementado (v0.1)
+
+- Política persistida en la tabla `settings` (`auto_unload_enabled`,
+  `auto_unload_idle_minutes`, `auto_unload_paused_until`). Por defecto,
+  desactivada y 30 minutos.
+- Fijados en la tabla `pinned`; la lista de modelos los devuelve con
+  `pinned: true`.
+- El proxy mantiene dos mapas en memoria: peticiones en vuelo y última vez que
+  cada modelo recibió tráfico. Para saber el modelo lee el campo `model` del
+  cuerpo (máximo 2 MB) y lo reenvía intacto.
+- El contador de en vuelo se incrementa al empezar y se decrementa en `defer`,
+  también si el cliente corta la conexión.
+- La comprobación corre cada 60 s en su propia goroutine; `Evaluate` es la misma
+  función que usa `POST /auto-unload/check`.
+- Un fallo al expulsar se reintenta una vez y se registra en `events` con el
+  error. Nunca hay bucle.
+- Cada expulsión, carga manual, cambio de ajuste y fijado queda en `events`.
+- La interfaz muestra el interruptor, los minutos, **Pausar 1 hora** y los
+  últimos 8 eventos. El candado de cada fila protege o suelta el modelo.
+
 ---
 
 ## 7. API del dashboard (`/api/v1`)
@@ -336,7 +356,11 @@ Objetivo: liberar VRAM cuando no molesta, **jamás** interrumpir algo en curso.
 | GET | `/usage/summary?from=&to=` | Totales por modelo y por cliente |
 | GET | `/usage/series?from=&to=&bucket=hour\|day` | Serie para gráficos |
 | GET | `/usage/export.csv` | Exportación |
-| GET | `/events?limit=` | Auditoría |
+| GET | `/events?limit=` | Auditoría (últimos eventos) |
+| GET | `/auto-unload` | Política: activa, minutos, pausa |
+| PUT | `/auto-unload` | `{"enabled":true,"idle_minutes":30}` o `{"pause_minutes":60}` / `{"resume":true}` |
+| POST | `/auto-unload/check` | Aplica la política ahora (mismas condiciones) |
+| PUT | `/models/:name/pinned` | `{"pinned": true}` protege de la auto-expulsión |
 | GET/PUT | `/settings` | Ajustes, incluido `auto_unload` y `proxy_enabled` |
 | GET | `/stream` | SSE: cargados, VRAM, tokens/s en vivo |
 

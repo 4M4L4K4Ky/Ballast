@@ -47,6 +47,12 @@ const el = {
   pullStart: document.getElementById('pull-start'),
   pullClose: document.getElementById('pull-close'),
   pulls: document.getElementById('pulls'),
+  autoPanel: document.getElementById('auto-panel'),
+  autoHint: document.getElementById('auto-hint'),
+  autoPause: document.getElementById('auto-pause'),
+  autoEnabled: document.getElementById('auto-enabled'),
+  autoMinutes: document.getElementById('auto-minutes'),
+  autoEvents: document.getElementById('auto-events'),
   diskPanel: document.getElementById('disk-panel'),
   diskHint: document.getElementById('disk-hint'),
   diskList: document.getElementById('disk-list'),
@@ -273,6 +279,11 @@ function render(models) {
           <span>${esc(m.name)}</span>
           <button class="copy" data-copy="${esc(m.name)}" title="Copiar nombre"
                   aria-label="Copiar nombre de ${esc(m.name)}">⧉</button>
+          <button class="pin${m.pinned ? ' pinned' : ''}" data-pin="${esc(m.name)}"
+                  data-pinned="${m.pinned ? '1' : '0'}" aria-pressed="${Boolean(m.pinned)}"
+                  title="${m.pinned ? 'Quitar la protección' : 'Proteger de la auto-expulsión'}"
+                  aria-label="${m.pinned ? 'Quitar la protección de' : 'Proteger de la auto-expulsión'} ${esc(m.name)}"
+          >${m.pinned ? '🔒' : '🔓'}</button>
         </td>
         <td class="dim">${bytes(m.size)}</td>
         <td class="dim">${esc(m.details?.quantization_level || '—')}</td>
@@ -321,6 +332,9 @@ function detailRows(m) {
   add('Formato', esc(m.details?.format || m.format || ''));
   const caps = (m.capabilities || []).map((c) => `<span class="badge">${esc(c)}</span>`).join(' ');
   add('Capacidades', caps);
+  add('Protección', m.pinned
+    ? '<span class="badge">Fijado · no se expulsa solo</span>'
+    : '<span class="dim">Normal</span>');
   add('Digest', esc((m.digest || '').slice(0, 16)), true);
   add('Modificado', esc(date(m.modified_at)));
 
@@ -345,6 +359,9 @@ function renderDetail() {
 
   el.drawerActions.innerHTML = `
     <button data-copy="${esc(m.name)}">Copiar nombre</button>
+    <button data-pin="${esc(m.name)}" data-pinned="${m.pinned ? '1' : '0'}">
+      ${m.pinned ? 'Soltar' : 'Fijar'}
+    </button>
     ${m.loaded
       ? `<button class="danger" data-unload="${esc(m.name)}">Expulsar</button>`
       : gameMode
@@ -448,6 +465,13 @@ async function unloadModel(name, btn) {
 
 // Un solo manejador para la tabla y la ficha lateral.
 document.addEventListener('click', async (event) => {
+  const pin = event.target.closest('[data-pin]');
+  if (pin) {
+    event.stopPropagation();
+    await togglePin(pin.dataset.pin, pin.dataset.pinned !== '1', pin);
+    return;
+  }
+
   const copy = event.target.closest('[data-copy]');
   if (copy) {
     event.stopPropagation();
@@ -642,6 +666,120 @@ function renderDisk(report) {
         </div>
       </div>`;
   }).join('');
+}
+
+// ---------- auto-expulsión ----------
+
+const AUTO_REFRESH_MS = 15000;
+let autoCfg = null;
+
+async function refreshAuto() {
+  try {
+    const [cfg, events] = await Promise.all([
+      api('/api/v1/auto-unload'),
+      api('/api/v1/events?limit=8'),
+    ]);
+    renderAuto(cfg, events.events || []);
+  } catch {
+    el.autoPanel.hidden = true;
+  }
+}
+
+function renderAuto(cfg, events) {
+  autoCfg = cfg;
+  el.autoPanel.hidden = false;
+
+  el.autoEnabled.checked = Boolean(cfg.enabled);
+  if (document.activeElement !== el.autoMinutes) {
+    el.autoMinutes.value = cfg.idle_minutes;
+  }
+
+  el.autoPause.textContent = cfg.paused ? 'Reanudar' : 'Pausar 1 hora';
+  el.autoPause.classList.toggle('active', Boolean(cfg.paused));
+
+  if (cfg.paused) {
+    const until = cfg.paused_until
+      ? new Date(cfg.paused_until).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+      : '';
+    el.autoHint.textContent = until ? `En pausa hasta las ${until}` : 'En pausa';
+  } else if (cfg.enabled) {
+    el.autoHint.textContent = `Activa · ${cfg.idle_minutes} min sin uso`;
+  } else {
+    el.autoHint.textContent = 'Desactivada';
+  }
+
+  renderEvents(events);
+}
+
+function renderEvents(events) {
+  const labels = {
+    'auto-unload': 'auto',
+    load: 'carga',
+    unload: 'manual',
+    settings: 'ajuste',
+    pull: 'descarga',
+    delete: 'borrado',
+    error: 'error',
+  };
+  el.autoEvents.innerHTML = events.map((e) => {
+    const time = new Date(e.ts).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    return `
+      <div class="event">
+        <time>${esc(time)}</time>
+        <span class="badge">${esc(labels[e.type] || e.type)}</span>
+        ${e.model ? `<span class="event-model">${esc(e.model)}</span>` : ''}
+        <span class="event-detail">${esc(e.detail || '')}</span>
+      </div>`;
+  }).join('');
+}
+
+async function updateAuto(payload) {
+  try {
+    await api('/api/v1/auto-unload', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    await refreshAuto();
+  } catch (err) {
+    toast(err.message, 'err');
+    await refreshAuto();
+  }
+}
+
+el.autoEnabled.addEventListener('change', () => {
+  updateAuto({ enabled: el.autoEnabled.checked });
+});
+
+el.autoMinutes.addEventListener('change', () => {
+  const n = Math.min(240, Math.max(5, Number(el.autoMinutes.value) || 30));
+  el.autoMinutes.value = n;
+  updateAuto({ idle_minutes: n });
+});
+
+el.autoPause.addEventListener('click', () => {
+  if (autoCfg?.paused) updateAuto({ resume: true });
+  else updateAuto({ pause_minutes: 60 });
+});
+
+// ---------- fijar modelos ----------
+
+async function togglePin(name, pinned, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    await api(`/api/v1/models/${encodeURIComponent(name)}/pinned`, {
+      method: 'PUT',
+      body: JSON.stringify({ pinned }),
+    });
+    toast(pinned ? `${name} protegido de la auto-expulsión` : `${name} ya se puede expulsar solo`, 'ok');
+    if (openDetail && openDetail.name === name) {
+      openDetail.pinned = pinned;
+      renderDetail();
+    }
+    await refresh();
+  } catch (err) {
+    toast(err.message, 'err');
+    if (btn) btn.disabled = false;
+  }
 }
 
 // ---------- descargas ----------
@@ -1035,6 +1173,11 @@ setInterval(() => {
   if (!document.hidden) refreshPulls();
 }, PULLS_REFRESH_MS);
 
+refreshAuto();
+setInterval(() => {
+  if (!document.hidden) refreshAuto();
+}, AUTO_REFRESH_MS);
+
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     refresh();
@@ -1042,5 +1185,6 @@ document.addEventListener('visibilitychange', () => {
     refreshDisk();
     refreshUsage();
     refreshPulls();
+    refreshAuto();
   }
 });

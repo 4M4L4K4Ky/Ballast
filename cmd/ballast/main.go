@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/4M4L4K4Ky/Ballast"
+	"github.com/4M4L4K4Ky/Ballast/internal/autounload"
 	"github.com/4M4L4K4Ky/Ballast/internal/disk"
 	"github.com/4M4L4K4Ky/Ballast/internal/mem"
 	"github.com/4M4L4K4Ky/Ballast/internal/proxy"
@@ -49,6 +50,7 @@ type server struct {
 	store    *store.Store
 	proxy    *proxy.Proxy
 	pull     *pull.Manager
+	auto     *autounload.Manager
 
 	diskMu     sync.Mutex
 	diskAt     time.Time
@@ -97,6 +99,14 @@ func main() {
 	s.proxy = proxy.New(u, s.store)
 	s.pull = pull.New(u)
 
+	if s.store != nil {
+		s.auto = autounload.New(s.store, s.proxy, s.loadedModels, s.unloadModel)
+		s.auto.Load(context.Background())
+		autoCtx, stopAuto := context.WithCancel(context.Background())
+		defer stopAuto()
+		go s.auto.Run(autoCtx)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
 	mux.HandleFunc("GET /api/v1/models", s.handleModels)
@@ -116,6 +126,11 @@ func main() {
 	mux.HandleFunc("POST /api/v1/models/pull", s.handlePullStart)
 	mux.HandleFunc("GET /api/v1/pulls/{id}/events", s.handlePullEvents)
 	mux.HandleFunc("DELETE /api/v1/pulls/{id}", s.handlePullCancel)
+	mux.HandleFunc("GET /api/v1/auto-unload", s.handleAutoUnload)
+	mux.HandleFunc("PUT /api/v1/auto-unload", s.handleAutoUnloadUpdate)
+	mux.HandleFunc("POST /api/v1/auto-unload/check", s.handleAutoUnloadCheck)
+	mux.HandleFunc("PUT /api/v1/models/{name}/pinned", s.handlePinned)
+	mux.HandleFunc("GET /api/v1/events", s.handleEvents)
 	mux.Handle("/", s.rootHandler())
 
 	srv := &http.Server{
@@ -199,6 +214,7 @@ type model struct {
 	Loaded       bool         `json:"loaded"`
 	SizeVRAM     int64        `json:"size_vram"`
 	ExpiresAt    *time.Time   `json:"expires_at,omitempty"`
+	Pinned       bool         `json:"pinned"`
 }
 
 func (s *server) handleModels(w http.ResponseWriter, r *http.Request) {
@@ -340,6 +356,9 @@ func (s *server) handleUnload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("modelo expulsado: %s", name)
+	if s.auto != nil {
+		s.auto.Event(r.Context(), "unload", name, "manual")
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"unloaded": name})
 }
 
@@ -372,6 +391,10 @@ func (s *server) handleLoad(w http.ResponseWriter, r *http.Request) {
 	if err := s.ollamaJSON(r.Context(), http.MethodPost, "/api/generate", body, nil); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
+	}
+	if s.auto != nil {
+		s.auto.MarkLoaded(name)
+		s.auto.Event(r.Context(), "load", name, "keep_alive "+req.KeepAlive)
 	}
 	log.Printf("modelo cargado: %s (keep_alive %s)", name, req.KeepAlive)
 	writeJSON(w, http.StatusOK, map[string]string{"loaded": name, "keep_alive": req.KeepAlive})
@@ -415,6 +438,11 @@ func (s *server) releaseVRAM(ctx context.Context) ([]string, map[string]string, 
 
 	if len(unloaded) > 0 {
 		log.Printf("VRAM liberada: %s", strings.Join(unloaded, ", "))
+	}
+	if s.auto != nil {
+		for _, name := range unloaded {
+			s.auto.Event(ctx, "unload", name, "liberar toda la VRAM")
+		}
 	}
 	return unloaded, failed, nil
 }
@@ -623,6 +651,158 @@ func (s *server) handlePullEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ---------- auto-expulsión ----------
+
+// loadedModels devuelve los nombres cargados según Ollama (/api/ps).
+func (s *server) loadedModels(ctx context.Context) ([]string, error) {
+	var ps struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := s.ollamaJSON(ctx, http.MethodGet, "/api/ps", nil, &ps); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(ps.Models))
+	for _, m := range ps.Models {
+		out = append(out, m.Name)
+	}
+	return out, nil
+}
+
+// unloadModel expulsa un modelo con keep_alive 0.
+func (s *server) unloadModel(ctx context.Context, name string) error {
+	body := map[string]any{"model": name, "keep_alive": 0}
+	return s.ollamaJSON(ctx, http.MethodPost, "/api/generate", body, nil)
+}
+
+func (s *server) requireAuto(w http.ResponseWriter) bool {
+	if s.auto == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": "auto-expulsión no disponible sin base de datos",
+		})
+		return false
+	}
+	return true
+}
+
+func (s *server) handleAutoUnload(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuto(w) {
+		return
+	}
+	writeJSON(w, http.StatusOK, s.auto.Config())
+}
+
+func (s *server) handleAutoUnloadUpdate(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuto(w) {
+		return
+	}
+
+	var req struct {
+		Enabled      *bool `json:"enabled"`
+		IdleMinutes  *int  `json:"idle_minutes"`
+		PauseMinutes *int  `json:"pause_minutes"`
+		Resume       bool  `json:"resume"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cuerpo JSON inválido"})
+		return
+	}
+
+	ctx := r.Context()
+	switch {
+	case req.Resume:
+		if err := s.auto.Resume(ctx); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	case req.PauseMinutes != nil:
+		if err := s.auto.Pause(ctx, time.Duration(*req.PauseMinutes)*time.Minute); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	if req.Enabled != nil {
+		if err := s.auto.SetEnabled(ctx, *req.Enabled); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	if req.IdleMinutes != nil {
+		if err := s.auto.SetIdleMinutes(ctx, *req.IdleMinutes); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+
+	s.auto.Event(ctx, "settings", "", "auto-expulsión actualizada")
+	writeJSON(w, http.StatusOK, s.auto.Config())
+}
+
+// handleAutoUnloadCheck aplica la política ahora mismo (mismas condiciones).
+func (s *server) handleAutoUnloadCheck(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuto(w) {
+		return
+	}
+	unloaded := s.auto.Evaluate(r.Context())
+	if unloaded == nil {
+		unloaded = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"unloaded": unloaded})
+}
+
+func (s *server) handlePinned(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "falta el nombre del modelo"})
+		return
+	}
+	if s.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "base de datos no disponible"})
+		return
+	}
+
+	var req struct {
+		Pinned bool `json:"pinned"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cuerpo JSON inválido"})
+		return
+	}
+	if err := s.store.SetPinned(r.Context(), name, req.Pinned); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	detail := "desprotegido"
+	if req.Pinned {
+		detail = "protegido de la auto-expulsión"
+	}
+	if s.auto != nil {
+		s.auto.Event(r.Context(), "settings", name, detail)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"model": name, "pinned": req.Pinned})
+}
+
+func (s *server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "base de datos no disponible"})
+		return
+	}
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	events, err := s.store.Events(r.Context(), limit)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": events})
+}
+
 // handleDisk devuelve el espacio de los discos reales. Se cachea 10 s.
 func (s *server) handleDisk(w http.ResponseWriter, r *http.Request) {
 	s.diskMu.Lock()
@@ -731,6 +911,13 @@ func (s *server) listModels(ctx context.Context) ([]model, error) {
 		}{m.SizeVRAM, m.ExpiresAt}
 	}
 
+	pinned := map[string]bool{}
+	if s.store != nil {
+		if set, err := s.store.Pinned(ctx); err == nil {
+			pinned = set
+		}
+	}
+
 	for i := range tags.Models {
 		if l, ok := loaded[tags.Models[i].Name]; ok {
 			tags.Models[i].Loaded = true
@@ -738,6 +925,7 @@ func (s *server) listModels(ctx context.Context) ([]model, error) {
 			exp := l.expires
 			tags.Models[i].ExpiresAt = &exp
 		}
+		tags.Models[i].Pinned = pinned[tags.Models[i].Name]
 	}
 	return tags.Models, nil
 }

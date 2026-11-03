@@ -308,6 +308,116 @@ main {
   font-size: 10px;
 }
 
+/* ---------- auto-expulsión ---------- */
+
+.auto-panel { margin-top: 12px; }
+
+.auto-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+  padding: 0 18px 14px;
+}
+
+.auto-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.auto-switch input {
+  width: 34px;
+  height: 19px;
+  margin: 0;
+  appearance: none;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.auto-switch input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.auto-switch input:checked {
+  background: color-mix(in srgb, var(--accent) 35%, var(--panel-2));
+  border-color: var(--accent);
+}
+
+.auto-switch input:checked::after {
+  transform: translateX(15px);
+  background: var(--accent-2);
+}
+
+.auto-idle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.auto-idle input {
+  width: 68px;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  outline: none;
+  text-align: center;
+}
+
+.auto-idle input:focus { border-color: var(--accent); }
+
+.auto-note {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.events {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  margin: 0 18px 16px;
+}
+
+.events:empty { display: none; }
+
+.event {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+.event:last-child { border-bottom: none; }
+.event time { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+.event .event-model { font-family: var(--mono); font-size: 12px; }
+.event .event-detail { margin-left: auto; color: var(--muted); text-align: right; }
+
 /* ---------- consumo ---------- */
 
 .usage-panel { margin-top: 12px; }
@@ -687,6 +797,22 @@ tbody tr.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 
 tbody tr:hover .copy, .copy:focus-visible { opacity: 1; }
 .copy:hover:not(:disabled) { color: var(--accent-2); border-color: var(--accent-2); }
+
+.pin {
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 11px;
+  line-height: 1.4;
+  border-radius: 5px;
+  opacity: 0;
+  vertical-align: 1px;
+  color: var(--muted);
+  background: transparent;
+}
+
+tbody tr:hover .pin, .pin:focus-visible, .pin.pinned { opacity: 1; }
+.pin.pinned { color: var(--warn); }
+.pin:hover:not(:disabled) { border-color: var(--warn); }
 
 /* ---------- ficha lateral ---------- */
 

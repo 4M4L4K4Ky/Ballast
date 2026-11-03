@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/4M4L4K4Ky/Ballast/internal/store"
@@ -19,12 +20,22 @@ import (
 // pone los totales al final, así que se conserva la cola.
 const captureLimit = 256 * 1024
 
+// maxModelScan es cuánto cuerpo se lee para sacar el campo "model". Más allá
+// de eso se asume que no es una petición de generación normal y no se toca.
+const maxModelScan = 2 << 20
+
 // Proxy reenvía las peticiones a Ollama y mide el consumo.
 type Proxy struct {
 	target *url.URL
 	client *http.Client
 	store  *store.Store
 	queue  chan store.Record
+
+	// Actividad por modelo, para la auto-expulsión. Solo cuenta el tráfico
+	// que pasa por aquí: es la única visibilidad que hay.
+	mu       sync.Mutex
+	inflight map[string]int
+	lastSeen map[string]time.Time
 }
 
 // New crea el proxy. store puede ser nil: en ese caso no se guardan métricas.
@@ -41,9 +52,11 @@ func New(target *url.URL, st *store.Store) *Proxy {
 		ExpectContinueTimeout: time.Second,
 	}
 	p := &Proxy{
-		target: target,
-		client: &http.Client{Transport: transport},
-		store:  st,
+		target:   target,
+		client:   &http.Client{Transport: transport},
+		store:    st,
+		inflight: make(map[string]int),
+		lastSeen: make(map[string]time.Time),
 	}
 	if st != nil {
 		// Cola con worker: la escritura en SQLite nunca frena la petición.
@@ -68,6 +81,13 @@ func (p *Proxy) worker() {
 // ServeHTTP implementa http.Handler.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+
+	// Se lee el cuerpo solo para saber qué modelo se va a usar y se restaura
+	// tal cual: el cliente de Ollama recibe los mismos bytes.
+	if model := readModel(r); model != "" {
+		done := p.track(model)
+		defer done()
+	}
 
 	outReq := r.Clone(r.Context())
 	outReq.URL.Scheme = p.target.Scheme
@@ -142,6 +162,73 @@ func (p *Proxy) recordModel(r *http.Request, status int, model string, prompt, c
 	default:
 		log.Printf("cola de métricas llena: se descarta %s %s", r.Method, r.URL.Path)
 	}
+}
+
+// ---------- actividad por modelo ----------
+
+// track marca una petición en vuelo y devuelve la función que la cierra.
+func (p *Proxy) track(model string) func() {
+	p.mu.Lock()
+	p.inflight[model]++
+	p.lastSeen[model] = time.Now()
+	p.mu.Unlock()
+
+	return func() {
+		p.mu.Lock()
+		if n := p.inflight[model] - 1; n > 0 {
+			p.inflight[model] = n
+		} else {
+			delete(p.inflight, model)
+		}
+		p.lastSeen[model] = time.Now()
+		p.mu.Unlock()
+	}
+}
+
+// InFlight devuelve una copia del contador de peticiones en vuelo por modelo.
+func (p *Proxy) InFlight() map[string]int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make(map[string]int, len(p.inflight))
+	for model, n := range p.inflight {
+		out[model] = n
+	}
+	return out
+}
+
+// LastSeen devuelve la última vez que cada modelo recibió tráfico.
+func (p *Proxy) LastSeen() map[string]time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make(map[string]time.Time, len(p.lastSeen))
+	for model, at := range p.lastSeen {
+		out[model] = at
+	}
+	return out
+}
+
+// readModel saca el campo "model" del cuerpo sin consumirlo. Si el cuerpo es
+// demasiado grande o no es JSON, devuelve "".
+func readModel(r *http.Request) string {
+	if r.Body == nil || !isGeneration(r.URL.Path) {
+		return ""
+	}
+	head, err := io.ReadAll(io.LimitReader(r.Body, maxModelScan))
+	if err != nil {
+		return ""
+	}
+	r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(head), r.Body))
+	if len(head) >= maxModelScan {
+		return ""
+	}
+
+	var payload struct {
+		Model string `json:"model"`
+	}
+	if json.Unmarshal(head, &payload) != nil {
+		return ""
+	}
+	return strings.TrimSpace(payload.Model)
 }
 
 // ---------- lectura de contadores ----------

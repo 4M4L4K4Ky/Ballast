@@ -144,6 +144,33 @@
       </div>
     </section>
 
+    <section class="panel auto-panel" id="auto-panel" hidden>
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2>Auto-expulsión</h2>
+          <span class="hint" id="auto-hint">—</span>
+        </div>
+        <button id="auto-pause">Pausar 1 hora</button>
+      </div>
+      <div class="auto-body">
+        <label class="auto-switch">
+          <input type="checkbox" id="auto-enabled">
+          <span>Activa</span>
+        </label>
+        <label class="auto-idle">
+          Expulsar tras
+          <input id="auto-minutes" type="number" min="5" max="240" step="5"
+                 inputmode="numeric" aria-label="Minutos sin uso antes de expulsar">
+          minutos sin uso
+        </label>
+        <p class="auto-note">
+          Nunca expulsa un modelo fijado, uno con peticiones en vuelo ni uno que
+          acabas de cargar. Solo ve el tráfico de este puerto (11435).
+        </p>
+      </div>
+      <div class="events" id="auto-events"></div>
+    </section>
+
     <section class="panel usage-panel" id="usage-panel" hidden>
       <div class="panel-head">
         <div class="panel-title">
