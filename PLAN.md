@@ -20,8 +20,8 @@ Funciona a día de hoy (último commit `19a821a`):
 - Proxy `:11435 → :11434` con contador de tokens en SQLite.
 - `install.sh`, `Makefile`, workflow de release y licencia.
 
-Lo que **no** hay todavía: descargas con progreso (T2.2/T2.3), auto-expulsión
-(T4), releases publicadas (T5) y catálogo online (aplazado).
+Lo que **no** hay todavía: auto-expulsión (T4), releases publicadas (T5) y
+catálogo online (aplazado).
 
 La tarjeta "Total modelos" es la suma del tamaño de los modelos, no el disco: el
 disco real está en el panel de Almacenamiento (T1.1/T1.2).
@@ -200,9 +200,8 @@ dime si cumple el DoD de PLAN.md.
 
 #### T2.2 · Descarga por nombre con progreso
 
-> **Prueba de fuego actual.** Es la primera tarea que escribe estado nuevo en
-> disco, habla con un flujo largo de Ollama y tiene que poder cancelarse a
-> mitad sin dejar basura. Si el stack aguanta esto, aguanta lo que queda.
+> **Estado: hecha (commit `14945f2`).** Era la prueba de fuego: primera
+> escritura de estado nuevo, flujo largo de Ollama y cancelación a mitad.
 
 - **Objetivo**: `POST /api/v1/models/pull` + `GET /api/v1/pulls/{id}/events` (SSE)
   y `DELETE /api/v1/pulls/{id}`.
@@ -216,6 +215,8 @@ dime si cumple el DoD de PLAN.md.
   mitad; el modelo no queda corrupto (`ollama list` coherente).
 
 #### T2.3 · UI de descargas
+
+> **Estado: hecha (commit `14945f2`).**
 
 - **Objetivo**: campo `nombre:tag`, lista de descargas activas, cancelar.
 - **Archivos**: `web/*`.
@@ -307,11 +308,11 @@ T1.1 → T1.2 → T1.3 → T1.4 → T1.5 → T1.6
      → T3.1 → T3.2 → T3.3 → T4.1 → T4.2 → T4.3 → T5.1 → T5.2
 ```
 
-Hechas: T1.1–T1.6, T2.1, T3.1–T3.3.
+Hechas: T1.1–T1.6, T2.1–T2.3, T3.1–T3.3.
 
-La **prueba de fuego** ahora es **T2.2**: primera escritura de estado nuevo,
-flujo largo de Ollama y cancelación a mitad. Las anteriores (T1.1/T1.2) ya
-pasaron y quedaron verificadas contra `df -h` y capturas reales.
+La siguiente **prueba de fuego** es **T4.2**: la auto-expulsión tiene que
+distinguir un modelo con una petición en vuelo de uno abandonado, y eso solo se
+puede comprobar con tráfico real por el proxy.
 
 ---
 
@@ -326,7 +327,8 @@ pasaron y quedaron verificadas contra `df -h` y capturas reales.
 | T1.5 | sesión principal | hecha | `curl` con código 423 | el estado sobrevive al reinicio (`state.json`) |
 | T1.6 | sesión principal | hecha | navegador | buscador, orden persistente y ficha desde `/api/show` |
 | T2.1 | sesión principal | hecha | doble arranque | esquema idempotente; `ballast.db` en `~/.local/share/ballast` |
-| T2.2 | — | **siguiente** | `ollama list` | descarga con progreso y cancelación a mitad |
+| T2.2 | sesión principal | hecha | `curl` SSE + `ollama list` | progreso agregado por digest; cancelar no deja modelo a medias |
+| T2.3 | sesión principal | hecha | navegador | barra al 64 % visible; cancelada limpia y sin errores en consola |
 | T3.1 | sesión principal | hecha | `curl /api/tags`, `/v1/models` | streaming NDJSON llega trozo a trozo |
 | T3.2 | sesión principal | hecha | SQLite + `/usage/summary` | 15/8 sin streaming, 14/20 con streaming; la suma cuadra |
 | T3.3 | sesión principal | hecha | navegador + CSV | barras de 14 días y tabla por modelo; CSV correcto |

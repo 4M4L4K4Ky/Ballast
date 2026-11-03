@@ -41,6 +41,12 @@ const el = {
   usageHint: document.getElementById('usage-hint'),
   usageBars: document.getElementById('usage-bars'),
   usageBody: document.getElementById('usage-body'),
+  pullOpen: document.getElementById('pull-open'),
+  pullBar: document.getElementById('pull-bar'),
+  pullName: document.getElementById('pull-name'),
+  pullStart: document.getElementById('pull-start'),
+  pullClose: document.getElementById('pull-close'),
+  pulls: document.getElementById('pulls'),
   diskPanel: document.getElementById('disk-panel'),
   diskHint: document.getElementById('disk-hint'),
   diskList: document.getElementById('disk-list'),
@@ -134,7 +140,11 @@ async function api(path, options = {}) {
     ...options,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+  if (!res.ok) {
+    const error = new Error(data.error || `Error ${res.status}`);
+    error.data = data;
+    throw error;
+  }
   return data;
 }
 
@@ -482,6 +492,7 @@ document.addEventListener('keydown', (event) => {
   }
   if (event.key === 'Escape') {
     if (!el.drawer.hidden) closeDrawer();
+    else if (!el.pullBar.hidden) el.pullBar.hidden = true;
     else if (document.activeElement === el.search) el.search.blur();
   }
 });
@@ -631,6 +642,182 @@ function renderDisk(report) {
         </div>
       </div>`;
   }).join('');
+}
+
+// ---------- descargas ----------
+
+const PULLS_REFRESH_MS = 5000;
+const pullsById = new Map();
+const pullStreams = new Map();
+
+function pullStatus(snap) {
+  if (snap.done) {
+    if (snap.status === 'completada') return 'Completada';
+    if (snap.status === 'cancelada') return 'Cancelada';
+    if (snap.status === 'error') return snap.error || 'Error';
+  }
+  const raw = snap.status || '';
+  if (raw.startsWith('pulling ') || raw === 'downloading') return 'Descargando';
+  if (raw.startsWith('verifying')) return 'Verificando';
+  if (raw.startsWith('writing')) return 'Escribiendo manifiesto';
+  if (raw === 'success') return 'Completada';
+  if (raw === 'empezando') return 'Empezando';
+  return raw || 'En cola';
+}
+
+function pullPercent(snap) {
+  if (snap.done && snap.status === 'completada') return 100;
+  return Math.min(100, Math.max(0, snap.percent || 0));
+}
+
+function renderPulls() {
+  const now = Date.now();
+  const list = [...pullsById.values()]
+    .filter((p) => !p.done || !p.ended_at || now - new Date(p.ended_at).getTime() < 120000)
+    .sort((a, b) => {
+      if (a.done !== b.done) return a.done ? 1 : -1;
+      return new Date(b.started_at) - new Date(a.started_at);
+    });
+
+  el.pulls.hidden = list.length === 0;
+  el.pulls.innerHTML = list.map((p) => {
+    const pct = pullPercent(p);
+    const failed = p.done && p.status === 'error';
+    const detail = p.total > 0
+      ? `${pct.toFixed(0)} % · ${bytes(p.completed)} de ${bytes(p.total)}`
+      : '';
+    const action = p.done
+      ? ''
+      : `<button class="danger" data-pull-cancel="${esc(p.id)}">Cancelar</button>`;
+    return `
+      <div class="pull-row${p.done ? ' done' : ''}${failed ? ' failed' : ''}">
+        <div class="pull-row-head">
+          <span class="pull-model">${esc(p.name)}</span>
+          <span class="pull-status">${esc(pullStatus(p))}${detail ? ` · ${esc(detail)}` : ''}</span>
+          ${action}
+        </div>
+        <div class="pull-progress"><i style="width:${pct.toFixed(1)}%"></i></div>
+      </div>`;
+  }).join('');
+}
+
+function subscribePull(id) {
+  if (pullStreams.has(id)) return;
+
+  const source = new EventSource(`/api/v1/pulls/${encodeURIComponent(id)}/events`);
+  pullStreams.set(id, source);
+
+  source.onmessage = (event) => {
+    let snap;
+    try {
+      snap = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    pullsById.set(id, snap);
+    renderPulls();
+
+    if (snap.done) {
+      source.close();
+      pullStreams.delete(id);
+      if (snap.status === 'completada') {
+        toast(`${snap.name} descargado`, 'ok');
+        // Ollama tarda un instante en listar el modelo recién escrito.
+        refresh();
+        setTimeout(refresh, 1500);
+      } else if (snap.status === 'error') {
+        toast(`Error al descargar ${snap.name}: ${snap.error || 'desconocido'}`, 'err');
+      }
+      // Se deja el resultado visible un momento y se vuelve a sincronizar.
+      setTimeout(refreshPulls, 1500);
+    }
+  };
+
+  source.onerror = () => {
+    source.close();
+    pullStreams.delete(id);
+  };
+}
+
+async function refreshPulls() {
+  try {
+    const { pulls } = await api('/api/v1/pulls');
+    for (const p of pulls) {
+      pullsById.set(p.id, p);
+      if (!p.done) subscribePull(p.id);
+    }
+    renderPulls();
+  } catch {
+    // Si falla no se oculta nada: el SSE sigue mandando.
+  }
+}
+
+async function startPull(name) {
+  name = name.trim();
+  if (!name) {
+    el.pullName.focus();
+    return;
+  }
+
+  el.pullStart.disabled = true;
+  el.pullStart.textContent = 'Empezando…';
+  try {
+    const snap = await api('/api/v1/models/pull', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+    pullsById.set(snap.id, snap);
+    renderPulls();
+    subscribePull(snap.id);
+    el.pullName.value = '';
+    el.pullBar.hidden = true;
+    toast(`Descargando ${snap.name}`, 'ok');
+  } catch (err) {
+    // 409: ya se está descargando; se engancha al flujo existente.
+    const data = err.data;
+    if (data?.pull?.id) {
+      pullsById.set(data.pull.id, data.pull);
+      renderPulls();
+      subscribePull(data.pull.id);
+      el.pullBar.hidden = true;
+    }
+    toast(err.message, 'err');
+  } finally {
+    el.pullStart.disabled = false;
+    el.pullStart.textContent = 'Descargar';
+  }
+}
+
+el.pullOpen.addEventListener('click', () => {
+  el.pullBar.hidden = !el.pullBar.hidden;
+  if (!el.pullBar.hidden) el.pullName.focus();
+});
+
+el.pullClose.addEventListener('click', () => {
+  el.pullBar.hidden = true;
+});
+
+el.pullBar.addEventListener('submit', (event) => {
+  event.preventDefault();
+  startPull(el.pullName.value);
+});
+
+document.addEventListener('click', (event) => {
+  const cancel = event.target.closest('[data-pull-cancel]');
+  if (!cancel) return;
+  cancelPull(cancel.dataset.pullCancel, cancel);
+});
+
+async function cancelPull(id, btn) {
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Cancelando…';
+  }
+  try {
+    await api(`/api/v1/pulls/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  } catch (err) {
+    toast(err.message, 'err');
+  }
 }
 
 // ---------- modo juego ----------
@@ -843,11 +1030,17 @@ setInterval(() => {
   if (!document.hidden) refreshUsage();
 }, USAGE_REFRESH_MS);
 
+refreshPulls();
+setInterval(() => {
+  if (!document.hidden) refreshPulls();
+}, PULLS_REFRESH_MS);
+
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     refresh();
     refreshMemory();
     refreshDisk();
     refreshUsage();
+    refreshPulls();
   }
 });

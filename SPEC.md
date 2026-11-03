@@ -324,9 +324,10 @@ Objetivo: liberar VRAM cuando no molesta, **jamás** interrumpir algo en curso.
 | POST | `/models/:name/load` | Carga con el `keep_alive` indicado |
 | PUT | `/models/:name/keepalive` | Fija `keep_alive` por defecto |
 | PUT | `/models/:name/pinned` | Protege o desprotege de la auto-expulsión |
-| POST | `/models/pull` | Inicia descarga por nombre; devuelve `pull_id` |
-| GET | `/pulls/:id/events` | SSE: `status`, `completed`, `total`, `percent`, `speed` |
-| DELETE | `/pulls/:id` | Cancela la descarga |
+| POST | `/models/pull` | `{"name": "qwen3:0.6b"}`; devuelve la descarga con su `id` (`409` si ya está en curso) |
+| GET | `/pulls` | Descargas activas y recientes (10 min) |
+| GET | `/pulls/:id/events` | SSE con una foto completa en cada cambio: `status`, `completed`, `total`, `percent`, `done` |
+| DELETE | `/pulls/:id` | Cancela la descarga (cierra la petición a Ollama) |
 | GET | `/ps` | Modelos cargados ahora, normalizado |
 | GET | `/disk` | Espacio total, libre y ocupado de cada disco, con el de modelos destacado |
 | GET | `/memory` | Foto de la VRAM real y serie temporal (`?since=ms`) |
@@ -392,10 +393,20 @@ nombre) · Copiar nombre.
 
 ### 8.3 Descargar
 
-- Campo único `nombre:tag` con autocompletado de instalados y recientes.
-- Validación de formato antes de llamar a Ollama.
-- Lista de descargas activas con porcentaje, velocidad y cancelar.
-- Aviso de espacio en disco disponible antes de empezar.
+Implementado (v0.1):
+
+- Botón **Descargar** en la cabecera de Modelos que abre un campo `nombre:tag`.
+- Validación del nombre antes de llamar a Ollama (`usuario/modelo:tag` incluido).
+- Barra de progreso agregada de todas las capas (`digest`) de la descarga.
+- Estado traducido: Descargando · Verificando · Escribiendo manifiesto ·
+  Completada · Cancelada.
+- **Cancelar** cierra la petición a Ollama; no queda un modelo a medias.
+- Varias descargas a la vez; si se repite un nombre en curso se engancha a la
+  existente en vez de duplicarla.
+- La lista se sincroniza por SSE y se recupera al recargar la página.
+
+Pendiente: autocompletado de instalados/recientes, velocidad instantánea y aviso
+de espacio libre antes de empezar.
 
 ### 8.4 Uso
 

@@ -26,6 +26,7 @@ import (
 	"github.com/4M4L4K4Ky/Ballast/internal/disk"
 	"github.com/4M4L4K4Ky/Ballast/internal/mem"
 	"github.com/4M4L4K4Ky/Ballast/internal/proxy"
+	"github.com/4M4L4K4Ky/Ballast/internal/pull"
 	"github.com/4M4L4K4Ky/Ballast/internal/state"
 	"github.com/4M4L4K4Ky/Ballast/internal/store"
 )
@@ -47,6 +48,7 @@ type server struct {
 	game     *state.GameMode
 	store    *store.Store
 	proxy    *proxy.Proxy
+	pull     *pull.Manager
 
 	diskMu     sync.Mutex
 	diskAt     time.Time
@@ -93,6 +95,7 @@ func main() {
 		log.Printf("base de datos: %s", st)
 	}
 	s.proxy = proxy.New(u, s.store)
+	s.pull = pull.New(u)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
@@ -109,6 +112,10 @@ func main() {
 	mux.HandleFunc("POST /api/v1/models/{name}/unload", s.handleUnload)
 	mux.HandleFunc("POST /api/v1/models/{name}/load", s.handleLoad)
 	mux.HandleFunc("POST /api/v1/vram/release", s.handleReleaseVRAM)
+	mux.HandleFunc("GET /api/v1/pulls", s.handlePulls)
+	mux.HandleFunc("POST /api/v1/models/pull", s.handlePullStart)
+	mux.HandleFunc("GET /api/v1/pulls/{id}/events", s.handlePullEvents)
+	mux.HandleFunc("DELETE /api/v1/pulls/{id}", s.handlePullCancel)
 	mux.Handle("/", s.rootHandler())
 
 	srv := &http.Server{
@@ -509,6 +516,110 @@ func (s *server) handleUsageCSV(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="ballast-uso.csv"`)
 	if err := s.store.ExportCSV(r.Context(), w); err != nil {
 		log.Printf("exportar CSV: %v", err)
+	}
+}
+
+// ---------- descargas ----------
+
+// handlePullStart lanza una descarga: {"name": "qwen3:0.6b"}.
+func (s *server) handlePullStart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cuerpo JSON inválido"})
+		return
+	}
+
+	snapshot, err := s.pull.Start(req.Name)
+	if err != nil {
+		// Una descarga duplicada devuelve el id existente con 409.
+		status := http.StatusBadRequest
+		if snapshot.ID != "" {
+			status = http.StatusConflict
+		}
+		writeJSON(w, status, map[string]any{"error": err.Error(), "pull": snapshot})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, snapshot)
+}
+
+// handlePulls lista las descargas activas y las recientes.
+func (s *server) handlePulls(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"pulls": s.pull.List()})
+}
+
+// handlePullCancel pide a Ollama que deje de descargar.
+func (s *server) handlePullCancel(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.pull.Cancel(id); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, pull.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"cancelled": true, "id": id})
+}
+
+// handlePullEvents transmite el estado de una descarga como SSE. Reenvía una
+// foto completa cada vez que cambia, así reconectar es trivial.
+func (s *server) handlePullEvents(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "el servidor no soporta streaming"})
+		return
+	}
+
+	if _, _, err := s.pull.Subscribe(id); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	var last uint64
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		snapshot, notify, err := s.pull.Subscribe(id)
+		if err != nil {
+			return
+		}
+		if snapshot.Version != last {
+			last = snapshot.Version
+			raw, err := json.Marshal(snapshot)
+			if err != nil {
+				return
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", raw); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+		if snapshot.Done {
+			return
+		}
+
+		select {
+		case <-notify:
+		case <-ticker.C:
+			// Comentario SSE: mantiene viva la conexión sin datos falsos.
+			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-r.Context().Done():
+			return
+		}
 	}
 }
 

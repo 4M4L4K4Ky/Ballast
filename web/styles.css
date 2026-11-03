@@ -513,6 +513,127 @@ main {
 .search input:focus { border-color: var(--accent); }
 .search input::-webkit-search-cancel-button { filter: grayscale(1) opacity(0.6); }
 
+/* ---------- descargas ---------- */
+
+.models-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.models-tools .search { flex: 1 1 220px; }
+
+#pull-open { white-space: nowrap; }
+
+.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+
+.ghost:hover:not(:disabled) { color: var(--text); }
+
+.pull-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px 14px;
+}
+
+.pull-bar[hidden] { display: none; }
+
+.pull-bar input {
+  flex: 1 1 220px;
+  min-width: 0;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  outline: none;
+}
+
+.pull-bar input:focus { border-color: var(--accent); }
+
+.pull-help {
+  flex: 1 1 100%;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.pulls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 18px 16px;
+}
+
+.pulls[hidden] { display: none; }
+
+.pull-row {
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+}
+
+.pull-row.failed { border-color: color-mix(in srgb, var(--err) 45%, var(--border)); }
+
+.pull-row-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.pull-model {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pull-status {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pull-row-head button {
+  flex: none;
+  font-size: 11.5px;
+  padding: 3px 9px;
+}
+
+.pull-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.pull-progress i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.2s linear;
+}
+
+.pull-row.done .pull-progress i { background: var(--ok); }
+.pull-row.failed .pull-progress i { background: var(--err); }
+
 /* ---------- ordenación ---------- */
 
 th.sortable {

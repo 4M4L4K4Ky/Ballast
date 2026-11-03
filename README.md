@@ -24,6 +24,8 @@ go build -o ballast ./cmd/ballast
   desactives.
 - **Almacenamiento**: espacio total, usado y libre de cada disco, con el de los
   modelos marcado y aviso si queda poco.
+- **Descargas**: botón Descargar con barra de progreso agregada y cancelación
+  limpia a mitad.
 - **Consumo**: proxy en `:11435` que cuenta tokens de entrada y salida por
   modelo, gráfica de 14 días y exportación a CSV.
 
@@ -45,7 +47,6 @@ Versión temprana pero usable a diario. Pendiente (ver [PLAN.md](PLAN.md)):
 
 | Fase | Contenido |
 |---|---|
-| F2 | Descargar modelos por nombre con progreso en vivo |
 | F4 | Auto-expulsión segura (nunca interrumpe trabajo en curso) |
 | F5 | Releases multiplataforma, `install.sh`, Docker |
 | F6 | Catálogo y búsqueda online (aplazado) |
