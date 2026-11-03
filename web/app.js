@@ -122,7 +122,7 @@ function render(models) {
       : '<span class="badge idle">Descargado</span>';
     const action = m.loaded
       ? `<button class="danger" data-unload="${esc(m.name)}">Expulsar</button>`
-      : '';
+      : `<button data-load="${esc(m.name)}">Cargar</button>`;
     return `
       <tr>
         <td class="model-name">${esc(m.name)}</td>
@@ -139,6 +139,26 @@ function render(models) {
 // ---------- acciones ----------
 
 el.body.addEventListener('click', async (event) => {
+  const loadBtn = event.target.closest('[data-load]');
+  if (loadBtn) {
+    const name = loadBtn.dataset.load;
+    loadBtn.disabled = true;
+    loadBtn.textContent = 'Cargando…';
+    try {
+      await api(`/api/v1/models/${encodeURIComponent(name)}/load`, {
+        method: 'POST',
+        body: JSON.stringify({ keep_alive: '10m' }),
+      });
+      toast(`${name} cargado en VRAM (10 min)`, 'ok');
+      await refresh();
+    } catch (err) {
+      toast(err.message, 'err');
+      loadBtn.disabled = false;
+      loadBtn.textContent = 'Cargar';
+    }
+    return;
+  }
+
   const btn = event.target.closest('[data-unload]');
   if (!btn) return;
   const name = btn.dataset.unload;

@@ -65,6 +65,7 @@ func main() {
 	mux.HandleFunc("GET /api/v1/models", s.handleModels)
 	mux.HandleFunc("GET /api/v1/ps", s.handlePS)
 	mux.HandleFunc("POST /api/v1/models/{name}/unload", s.handleUnload)
+	mux.HandleFunc("POST /api/v1/models/{name}/load", s.handleLoad)
 	mux.HandleFunc("POST /api/v1/vram/release", s.handleReleaseVRAM)
 	mux.Handle("/", staticHandler())
 
@@ -181,6 +182,34 @@ func (s *server) handleUnload(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("modelo expulsado: %s", name)
 	writeJSON(w, http.StatusOK, map[string]string{"unloaded": name})
+}
+
+// handleLoad carga un modelo en la VRAM con el keep_alive indicado.
+// Se apoya en /api/generate con prompt vacío: Ollama carga y devuelve al momento.
+func (s *server) handleLoad(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "falta el nombre del modelo"})
+		return
+	}
+
+	var req struct {
+		KeepAlive string `json:"keep_alive"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	if req.KeepAlive == "" {
+		req.KeepAlive = "10m"
+	}
+
+	body := map[string]any{"model": name, "keep_alive": req.KeepAlive}
+	if err := s.ollamaJSON(r.Context(), http.MethodPost, "/api/generate", body, nil); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	log.Printf("modelo cargado: %s (keep_alive %s)", name, req.KeepAlive)
+	writeJSON(w, http.StatusOK, map[string]string{"loaded": name, "keep_alive": req.KeepAlive})
 }
 
 // handleReleaseVRAM expulsa de la VRAM todos los modelos cargados de golpe.
