@@ -102,6 +102,53 @@ main {
 .dot.ok { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
 .dot.err { background: var(--err); box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 20%, transparent); }
 
+/* ---------- modo juego ---------- */
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.game-btn {
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.game-btn.active {
+  border-color: var(--ok);
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
+.game-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--border));
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--ok) 14%, var(--panel)),
+    var(--panel) 70%);
+}
+
+.game-bar[hidden] { display: none; }
+
+.game-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.game-icon { font-size: 20px; line-height: 1; }
+.game-info strong { font-size: 14px; }
+
 /* ---------- tarjetas ---------- */
 
 .cards {
@@ -185,6 +232,78 @@ main {
 #release-all {
   flex: none;
   font-weight: 500;
+}
+
+/* ---------- gráfica de memoria ---------- */
+
+.mem-panel { margin-bottom: 12px; }
+
+.mem-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.mem-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  border-radius: 2px;
+  vertical-align: 0;
+}
+
+.sw.ollama { background: var(--accent); }
+.sw.other { background: color-mix(in srgb, var(--muted) 55%, transparent); }
+.sw.gtt {
+  width: 12px;
+  height: 0;
+  border-top: 2px dashed var(--warn);
+  border-radius: 0;
+  vertical-align: 3px;
+}
+
+.mem-chart {
+  position: relative;
+  padding: 0 18px 14px;
+}
+
+.mem-chart svg {
+  display: block;
+  width: 100%;
+  height: 150px;
+}
+
+.mem-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.mem-empty[hidden] { display: none; }
+
+.area-ollama { fill: var(--accent); fill-opacity: 0.32; }
+.area-other { fill: var(--muted); fill-opacity: 0.2; }
+.line-gtt {
+  fill: none;
+  stroke: var(--warn);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  opacity: 0.85;
+  vector-effect: non-scaling-stroke;
+}
+.mem-grid { stroke: var(--border); stroke-width: 1; }
+.mem-axis {
+  fill: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
 }
 
 /* ---------- panel ---------- */

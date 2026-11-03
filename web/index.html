@@ -19,13 +19,27 @@
         <p class="tagline">Control de modelos locales</p>
       </div>
     </div>
-    <div class="status" id="status">
-      <span class="dot" id="status-dot"></span>
-      <span id="status-text">Conectando con Ollama…</span>
+    <div class="topbar-actions">
+      <div class="status" id="status">
+        <span class="dot" id="status-dot"></span>
+        <span id="status-text">Conectando con Ollama…</span>
+      </div>
+      <button id="game-toggle" class="game-btn"
+              title="Libera la VRAM y bloquea las cargas hasta que lo desactives">Modo juego</button>
     </div>
   </header>
 
   <main>
+    <section class="game-bar" id="game-bar" hidden>
+      <div class="game-info">
+        <span class="game-icon" aria-hidden="true">🎮</span>
+        <div>
+          <strong>Modo juego activo</strong>
+          <p class="vram-detail" id="game-detail">La GPU está libre. Ballast no cargará modelos hasta que lo desactives.</p>
+        </div>
+      </div>
+      <button id="game-exit">Salir del modo juego</button>
+    </section>
     <section class="cards">
       <article class="card">
         <p class="card-label">Modelos instalados</p>
@@ -56,6 +70,24 @@
       <button id="release-all" class="danger" title="Expulsa todos los modelos cargados para dejar la GPU libre">
         Liberar toda la VRAM
       </button>
+    </section>
+
+    <section class="panel mem-panel" id="mem-panel" hidden>
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2>Memoria de la GPU</h2>
+          <span class="hint" id="mem-hint">—</span>
+        </div>
+        <div class="mem-legend">
+          <span><i class="sw ollama"></i>Ollama</span>
+          <span><i class="sw other"></i>Otros</span>
+          <span><i class="sw gtt"></i>GTT</span>
+        </div>
+      </div>
+      <div class="mem-chart" id="mem-chart">
+        <svg id="mem-svg" aria-hidden="true"></svg>
+        <p class="mem-empty" id="mem-empty">Recopilando datos…</p>
+      </div>
     </section>
 
     <section class="panel">

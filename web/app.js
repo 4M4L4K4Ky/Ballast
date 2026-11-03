@@ -7,6 +7,7 @@ const LS_SORT_DIR = 'ballast.sort.dir';
 let refreshing = false;
 let allModels = [];
 let openName = null;   // modelo cuya ficha está abierta
+let gameMode = false;  // modo juego activo (lo manda el servidor)
 let openDetail = null; // respuesta de /api/v1/models/{name}
 let lastFocus = null;
 
@@ -30,6 +31,15 @@ const el = {
   vramCount: document.getElementById('vram-count'),
   vramDetail: document.getElementById('vram-detail'),
   releaseAll: document.getElementById('release-all'),
+  gameToggle: document.getElementById('game-toggle'),
+  gameBar: document.getElementById('game-bar'),
+  gameExit: document.getElementById('game-exit'),
+  gameDetail: document.getElementById('game-detail'),
+  memPanel: document.getElementById('mem-panel'),
+  memHint: document.getElementById('mem-hint'),
+  memChart: document.getElementById('mem-chart'),
+  memSvg: document.getElementById('mem-svg'),
+  memEmpty: document.getElementById('mem-empty'),
   drawer: document.getElementById('drawer'),
   overlay: document.getElementById('drawer-overlay'),
   drawerState: document.getElementById('drawer-state'),
@@ -51,7 +61,7 @@ function bytes(n) {
     v /= 1024;
     i++;
   }
-  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+  return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1).replace('.', ',')} ${units[i]}`;
 }
 
 function ctx(n) {
@@ -144,6 +154,8 @@ async function refresh() {
       el.statusText.textContent = 'Ollama no responde';
     }
 
+    setGameModeUI(status.game_mode, status.game_since);
+
     const { models } = await api('/api/v1/models');
     allModels = models;
     render(models);
@@ -226,7 +238,9 @@ function render(models) {
       : '<span class="badge idle">Descargado</span>';
     const action = m.loaded
       ? `<button class="danger" data-unload="${esc(m.name)}">Expulsar</button>`
-      : `<button data-load="${esc(m.name)}">Cargar</button>`;
+      : gameMode
+        ? `<button disabled title="Modo juego activo">Cargar</button>`
+        : `<button data-load="${esc(m.name)}">Cargar</button>`;
     return `
       <tr class="row" data-name="${esc(m.name)}" tabindex="0">
         <td class="model-name">
@@ -307,7 +321,9 @@ function renderDetail() {
     <button data-copy="${esc(m.name)}">Copiar nombre</button>
     ${m.loaded
       ? `<button class="danger" data-unload="${esc(m.name)}">Expulsar</button>`
-      : `<button data-load="${esc(m.name)}">Cargar</button>`}`;
+      : gameMode
+        ? '<button disabled title="Modo juego activo">Cargar</button>'
+        : `<button data-load="${esc(m.name)}">Cargar</button>`}`;
 }
 
 async function openDetailFor(name) {
@@ -495,11 +511,209 @@ el.releaseAll.addEventListener('click', async () => {
   }
 });
 
+// ---------- modo juego ----------
+
+function setGameModeUI(enabled, since) {
+  gameMode = Boolean(enabled);
+  el.gameBar.hidden = !gameMode;
+  el.gameToggle.classList.toggle('active', gameMode);
+  el.gameToggle.textContent = gameMode ? 'Salir del modo juego' : 'Modo juego';
+  if (gameMode) {
+    const hora = since
+      ? new Date(since).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+      : '';
+    el.gameDetail.textContent = `${hora ? `Activo desde las ${hora}. ` : ''}`
+      + 'La GPU está libre. Ballast no cargará modelos hasta que lo desactives.';
+  }
+}
+
+async function setGameMode(enabled) {
+  if (enabled && !confirm('¿Activar el modo juego? Se expulsarán todos los modelos de la VRAM.')) {
+    return;
+  }
+  el.gameToggle.disabled = true;
+  try {
+    const res = await api('/api/v1/game-mode', {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    });
+    const n = (res.unloaded || []).length;
+    if (enabled) {
+      toast(n ? `Modo juego: ${n} modelo(s) expulsado(s)` : 'Modo juego activo', 'ok');
+    } else {
+      toast('Modo juego desactivado', 'ok');
+    }
+    await refresh();
+  } catch (err) {
+    toast(err.message, 'err');
+  } finally {
+    el.gameToggle.disabled = false;
+  }
+}
+
+el.gameToggle.addEventListener('click', () => setGameMode(!gameMode));
+el.gameExit.addEventListener('click', () => setGameMode(false));
+
+// ---------- memoria de la GPU en tiempo real ----------
+
+const MEM_POLL_MS = 2000;
+let memSnap = null;
+let memSeries = [];
+let memLastT = 0;
+
+function bytes0(n) {
+  return n ? bytes(n) : '0 B';
+}
+
+async function refreshMemory() {
+  try {
+    const query = memLastT ? `?since=${memLastT}` : '';
+    const data = await api(`/api/v1/memory${query}`);
+
+    if (!data.supported) {
+      el.memPanel.hidden = true;
+      return;
+    }
+    el.memPanel.hidden = false;
+
+    // Si el servidor se reinició, su reloj va por detrás: se empieza de cero.
+    if (memLastT && data.now <= memLastT) {
+      memLastT = 0;
+      memSeries = [];
+      return refreshMemory();
+    }
+
+    memSnap = data;
+    memSeries = memLastT ? memSeries.concat(data.series || []) : (data.series || []);
+
+    // Se descarta lo que ya no cabe en la ventana.
+    const cutoff = data.now - (data.window_seconds || 900) * 1000 - 5000;
+    memSeries = memSeries.filter((s) => s.t >= cutoff);
+    memLastT = memSeries.length ? memSeries[memSeries.length - 1].t : 0;
+
+    drawMemory();
+  } catch {
+    el.memPanel.hidden = true;
+  }
+}
+
+function drawMemory() {
+  if (!memSnap) return;
+
+  const total = memSnap.total_bytes || 1;
+  const width = Math.max(320, Math.round(el.memChart.clientWidth - 36));
+  const height = 150;
+  const padTop = 10;
+  const padBottom = 18;
+  const padRight = 52;
+  const w = width - padRight;
+  const h = height - padTop - padBottom;
+  const base = padTop + h;
+  const now = memSnap.now || Date.now();
+  const windowMs = (memSnap.window_seconds || 900) * 1000;
+  const points = memSeries.filter((s) => s.t >= now - windowMs);
+
+  // Mientras la serie es joven se escala a lo que hay, para que la gráfica
+  // no sea una raya pegada al borde derecho los primeros minutos.
+  const age = points.length ? now - points[0].t : 0;
+  const span = age > 0 && age < windowMs ? Math.max(5000, age + 500) : windowMs;
+  const t0 = now - span;
+
+  const px = (t) => Math.max(0, Math.min(w, ((t - t0) / span) * w));
+  const py = (v) => padTop + h - Math.max(0, Math.min(1, v / total)) * h;
+
+  const last = points[points.length - 1] || {};
+  const used = last.vram ?? memSnap.used_bytes ?? 0;
+  const ollama = Math.min(last.ollama ?? 0, used);
+  const other = Math.max(0, used - ollama);
+  const pct = total ? Math.round((used / total) * 100) : 0;
+  el.memHint.textContent =
+    `${bytes(used)} de ${bytes(total)} · ${pct} % · Ollama ${bytes0(ollama)} · Otros ${bytes0(other)}`;
+
+  el.memEmpty.hidden = points.length >= 2;
+  if (points.length < 2) {
+    el.memSvg.innerHTML = '';
+    return;
+  }
+
+  const x0 = px(points[0].t);
+  const x1 = px(points[points.length - 1].t);
+
+  // Área de Ollama: de la base a lo que ocupan los modelos.
+  let ollamaPath = `M${x0.toFixed(1)},${base.toFixed(1)}`;
+  for (const s of points) {
+    ollamaPath += ` L${px(s.t).toFixed(1)},${py(Math.min(s.ollama || 0, s.vram)).toFixed(1)}`;
+  }
+  ollamaPath += ` L${x1.toFixed(1)},${base.toFixed(1)} Z`;
+
+  // Área de otros: entre la curva de Ollama y la VRAM total usada.
+  let otherPath = '';
+  points.forEach((s, i) => {
+    otherPath += `${i ? 'L' : 'M'}${px(s.t).toFixed(1)},${py(s.vram).toFixed(1)} `;
+  });
+  for (let i = points.length - 1; i >= 0; i--) {
+    const s = points[i];
+    otherPath += `L${px(s.t).toFixed(1)},${py(Math.min(s.ollama || 0, s.vram)).toFixed(1)} `;
+  }
+  otherPath += 'Z';
+
+  const gttPath = points
+    .map((s, i) => `${i ? 'L' : 'M'}${px(s.t).toFixed(1)},${py(s.gtt || 0).toFixed(1)}`)
+    .join(' ');
+
+  // Rejilla horizontal y etiquetas de GB a la derecha.
+  const grid = [0, 0.25, 0.5, 0.75, 1].map((f) => {
+    const y = (padTop + h - f * h).toFixed(1);
+    return `<line class="mem-grid" x1="0" y1="${y}" x2="${w}" y2="${y}"/>`
+      + `<text class="mem-axis" x="${w + 8}" y="${Number(y) + 3}">${bytes0(total * f)}</text>`;
+  }).join('');
+
+  // Marcas de tiempo: el paso se adapta a la ventana visible.
+  const steps = [5e3, 10e3, 30e3, 60e3, 120e3, 300e3, 900e3];
+  const step = steps.find((s) => span / s <= 4) || 900e3;
+  const tickValues = [];
+  for (let v = 0; v >= -span; v -= step) tickValues.push(v);
+  tickValues.reverse();
+
+  const timeLabels = tickValues.map((offset) => {
+    const x = px(now + offset);
+    const label = offset === 0
+      ? 'ahora'
+      : step < 60000
+        ? `-${Math.round(-offset / 1000)} s`
+        : `-${Math.round(-offset / 60000)} min`;
+    let anchor = 'middle';
+    if (x < 24) anchor = 'start';
+    else if (x > w - 24) anchor = 'end';
+    return `<text class="mem-axis" x="${x.toFixed(1)}" y="${height - 2}" text-anchor="${anchor}">${label}</text>`;
+  }).join('');
+
+  el.memSvg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  el.memSvg.innerHTML = `
+    <path class="area-other" d="${otherPath}"/>
+    <path class="area-ollama" d="${ollamaPath}"/>
+    <path class="line-gtt" d="${gttPath}"/>
+    ${grid}
+    ${timeLabels}`;
+}
+
+window.addEventListener('resize', () => {
+  if (memSnap) drawMemory();
+});
+
 // ---------- arranque ----------
 
 refresh();
 setInterval(refresh, REFRESH_MS);
 
+refreshMemory();
+setInterval(() => {
+  if (!document.hidden) refreshMemory();
+}, MEM_POLL_MS);
+
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) refresh();
+  if (!document.hidden) {
+    refresh();
+    refreshMemory();
+  }
 });

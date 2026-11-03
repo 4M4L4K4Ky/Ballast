@@ -15,11 +15,14 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/4M4L4K4Ky/Ballast"
+	"github.com/4M4L4K4Ky/Ballast/internal/mem"
+	"github.com/4M4L4K4Ky/Ballast/internal/state"
 )
 
 // version se sobreescribe en tiempo de compilación con -ldflags.
@@ -35,6 +38,8 @@ type server struct {
 	client   *http.Client
 	started  time.Time
 	listenOn string
+	mem      *mem.Sampler
+	game     *state.GameMode
 }
 
 func main() {
@@ -58,13 +63,22 @@ func main() {
 		client:   &http.Client{Timeout: 60 * time.Second},
 		started:  time.Now(),
 		listenOn: *listen,
+		mem:      mem.NewSampler(time.Second, 15*time.Minute),
+		game:     state.NewGameMode(state.DataDir()),
 	}
+
+	memCtx, stopMem := context.WithCancel(context.Background())
+	defer stopMem()
+	go s.mem.Run(memCtx, s.ollamaVRAM)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
 	mux.HandleFunc("GET /api/v1/models", s.handleModels)
 	mux.HandleFunc("GET /api/v1/models/{name}", s.handleModel)
 	mux.HandleFunc("GET /api/v1/ps", s.handlePS)
+	mux.HandleFunc("GET /api/v1/memory", s.handleMemory)
+	mux.HandleFunc("GET /api/v1/game-mode", s.handleGameModeStatus)
+	mux.HandleFunc("POST /api/v1/game-mode", s.handleGameMode)
 	mux.HandleFunc("POST /api/v1/models/{name}/unload", s.handleUnload)
 	mux.HandleFunc("POST /api/v1/models/{name}/load", s.handleLoad)
 	mux.HandleFunc("POST /api/v1/vram/release", s.handleReleaseVRAM)
@@ -98,12 +112,14 @@ func main() {
 // ---------- API ----------
 
 type statusResponse struct {
-	Version       string `json:"version"`
-	OllamaURL     string `json:"ollama_url"`
-	OllamaVersion string `json:"ollama_version,omitempty"`
-	Reachable     bool   `json:"reachable"`
-	UptimeSeconds int64  `json:"uptime_seconds"`
-	Error         string `json:"error,omitempty"`
+	Version       string     `json:"version"`
+	OllamaURL     string     `json:"ollama_url"`
+	OllamaVersion string     `json:"ollama_version,omitempty"`
+	Reachable     bool       `json:"reachable"`
+	UptimeSeconds int64      `json:"uptime_seconds"`
+	GameMode      bool       `json:"game_mode"`
+	GameSince     *time.Time `json:"game_since,omitempty"`
+	Error         string     `json:"error,omitempty"`
 }
 
 func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -111,6 +127,10 @@ func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Version:       version,
 		OllamaURL:     s.ollama.String(),
 		UptimeSeconds: int64(time.Since(s.started).Seconds()),
+		GameMode:      s.game.Enabled(),
+	}
+	if since := s.game.Since(); !since.IsZero() {
+		resp.GameSince = &since
 	}
 
 	var v struct {
@@ -297,6 +317,12 @@ func (s *server) handleLoad(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "falta el nombre del modelo"})
 		return
 	}
+	if s.game.Enabled() {
+		writeJSON(w, http.StatusLocked, map[string]string{
+			"error": "modo juego activo: desactívalo para cargar modelos",
+		})
+		return
+	}
 
 	var req struct {
 		KeepAlive string `json:"keep_alive"`
@@ -320,21 +346,33 @@ func (s *server) handleLoad(w http.ResponseWriter, r *http.Request) {
 // handleReleaseVRAM expulsa de la VRAM todos los modelos cargados de golpe.
 // Pensado para liberar la GPU al terminar de trabajar.
 func (s *server) handleReleaseVRAM(w http.ResponseWriter, r *http.Request) {
+	unloaded, failed, err := s.releaseVRAM(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"unloaded": unloaded,
+		"failed":   failed,
+	})
+}
+
+// releaseVRAM expulsa todos los modelos y devuelve qué se ha liberado.
+func (s *server) releaseVRAM(ctx context.Context) ([]string, map[string]string, error) {
 	var ps struct {
 		Models []struct {
 			Name string `json:"name"`
 		} `json:"models"`
 	}
-	if err := s.ollamaJSON(r.Context(), http.MethodGet, "/api/ps", nil, &ps); err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
-		return
+	if err := s.ollamaJSON(ctx, http.MethodGet, "/api/ps", nil, &ps); err != nil {
+		return nil, nil, err
 	}
 
 	unloaded := make([]string, 0, len(ps.Models))
 	failed := make(map[string]string)
 	for _, m := range ps.Models {
 		body := map[string]any{"model": m.Name, "keep_alive": 0}
-		if err := s.ollamaJSON(r.Context(), http.MethodPost, "/api/generate", body, nil); err != nil {
+		if err := s.ollamaJSON(ctx, http.MethodPost, "/api/generate", body, nil); err != nil {
 			failed[m.Name] = err.Error()
 			continue
 		}
@@ -344,10 +382,88 @@ func (s *server) handleReleaseVRAM(w http.ResponseWriter, r *http.Request) {
 	if len(unloaded) > 0 {
 		log.Printf("VRAM liberada: %s", strings.Join(unloaded, ", "))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"unloaded": unloaded,
-		"failed":   failed,
-	})
+	return unloaded, failed, nil
+}
+
+// handleGameModeStatus informa si el modo juego está activo.
+func (s *server) handleGameModeStatus(w http.ResponseWriter, r *http.Request) {
+	resp := map[string]any{"enabled": s.game.Enabled()}
+	if since := s.game.Since(); !since.IsZero() {
+		resp["since"] = since
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleGameMode activa o desactiva el modo juego. Al activarlo libera la VRAM.
+func (s *server) handleGameMode(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cuerpo JSON inválido"})
+		return
+	}
+	if err := s.game.Set(req.Enabled); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	resp := map[string]any{"enabled": req.Enabled}
+	if req.Enabled {
+		unloaded, failed, err := s.releaseVRAM(r.Context())
+		if err != nil {
+			// El modo queda activo aunque Ollama no responda.
+			resp["warning"] = err.Error()
+		} else {
+			resp["unloaded"] = unloaded
+			resp["failed"] = failed
+		}
+		log.Printf("modo juego activado")
+	} else {
+		log.Printf("modo juego desactivado")
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+type memoryResponse struct {
+	mem.Snapshot
+	Now    int64        `json:"now"`
+	Series []mem.Sample `json:"series"`
+}
+
+// handleMemory devuelve la foto de la GPU y los puntos nuevos desde ?since=.
+func (s *server) handleMemory(w http.ResponseWriter, r *http.Request) {
+	var since int64
+	if v := r.URL.Query().Get("since"); v != "" {
+		since, _ = strconv.ParseInt(v, 10, 64)
+	}
+
+	now := time.Now().UnixMilli()
+	if since > now {
+		since = 0 // el reloj cambió o el cliente venía de otra sesión
+	}
+	snap, series := s.mem.Snapshot(since)
+	writeJSON(w, http.StatusOK, memoryResponse{Snapshot: snap, Now: now, Series: series})
+}
+
+// ollamaVRAM suma la VRAM que Ollama dice tener ocupada por modelos.
+func (s *server) ollamaVRAM(ctx context.Context) int64 {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	var ps struct {
+		Models []struct {
+			SizeVRAM int64 `json:"size_vram"`
+		} `json:"models"`
+	}
+	if err := s.ollamaJSON(ctx, http.MethodGet, "/api/ps", nil, &ps); err != nil {
+		return 0
+	}
+	var total int64
+	for _, m := range ps.Models {
+		total += m.SizeVRAM
+	}
+	return total
 }
 
 func (s *server) listModels(ctx context.Context) ([]model, error) {

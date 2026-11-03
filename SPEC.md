@@ -326,6 +326,9 @@ Objetivo: liberar VRAM cuando no molesta, **jamás** interrumpir algo en curso.
 | DELETE | `/pulls/:id` | Cancela la descarga |
 | GET | `/ps` | Modelos cargados ahora, normalizado |
 | GET | `/disk` | Espacio total, libre y ocupado de cada disco, con el de modelos destacado |
+| GET | `/memory` | Foto de la VRAM real y serie temporal (`?since=ms`) |
+| GET | `/game-mode` | Estado del modo juego |
+| POST | `/game-mode` | `{"enabled": true}` libera la VRAM y bloquea cargas |
 | GET | `/usage/summary?from=&to=` | Totales por modelo y por cliente |
 | GET | `/usage/series?from=&to=&bucket=hour\|day` | Serie para gráficos |
 | GET | `/usage/export.csv` | Exportación |
@@ -466,6 +469,40 @@ Reglas de implementación:
 7. Si `--ollama` apunta a otra máquina, `remote = true` y la UI muestra un aviso:
    el disco medido es el del equipo donde corre Ballast, no el de Ollama.
 8. La llamada es de solo lectura y se cachea 10 s para no martillear el disco.
+
+### 8.8 Memoria de la GPU en tiempo real
+
+La tarjeta "VRAM ocupada" solo sabe lo que Ollama declara. Esta gráfica mide la
+GPU de verdad.
+
+- **Fuente**: sysfs (`/sys/class/drm/card*/device/mem_info_vram_*`), eligiendo la
+  tarjeta con más VRAM. Sin `radeontop` ni dependencias.
+- **Muestreo**: un punto por segundo en el servidor, ventana de 15 minutos
+  (~900 puntos, 40 KB en memoria). No toca disco.
+- **Panel**: área apilada sobre el total de la GPU, con la parte de Ollama
+  (`size_vram` de `/api/ps`) y la del resto del sistema. Línea discontinua para
+  GTT, que es donde desbordan los modelos cuando no caben en VRAM.
+- **Cabecera**: `11,8 GB de 12,0 GB · 98 % · Ollama 9,8 GB · Otros 2,0 GB`.
+- **Transporte**: `GET /api/v1/memory?since=<ms>` devuelve solo los puntos
+  nuevos. El cliente pide cada 2 s y dibuja con SVG, sin librerías.
+- **Primeros segundos**: la ventana se escala a los datos disponibles para que
+  la gráfica no sea una raya pegada al borde derecho.
+- **Sin soporte** (macOS, Windows, GPU sin driver amdgpu): el panel se oculta y
+  el resto del dashboard sigue igual.
+
+### 8.9 Modo juego
+
+Un interruptor para dejar la GPU libre sin pelearse con la terminal.
+
+- Al activarlo, Ballast expulsa todos los modelos y deja de aceptar cargas:
+  `POST /api/v1/models/:name/load` responde `423 Locked`.
+- El estado se guarda en `~/.local/share/ballast/state.json` y sobrevive a
+  reinicios del binario.
+- En la interfaz: botón en la cabecera, franja verde con "Modo juego activo" y
+  botones de carga deshabilitados.
+- **Límite honesto**: solo afecta a Ballast. Si otro cliente (OpenCode, `ollama
+  run`, una app) pide un modelo directamente a `:11434`, Ollama lo carga igual.
+  El modo juego deja de ser una promesa cuando el proxy (§2.1) esté en medio.
 
 ---
 
