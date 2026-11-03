@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,7 +25,9 @@ import (
 	"github.com/4M4L4K4Ky/Ballast"
 	"github.com/4M4L4K4Ky/Ballast/internal/disk"
 	"github.com/4M4L4K4Ky/Ballast/internal/mem"
+	"github.com/4M4L4K4Ky/Ballast/internal/proxy"
 	"github.com/4M4L4K4Ky/Ballast/internal/state"
+	"github.com/4M4L4K4Ky/Ballast/internal/store"
 )
 
 // version se sobreescribe en tiempo de compilación con -ldflags.
@@ -42,6 +45,8 @@ type server struct {
 	listenOn string
 	mem      *mem.Sampler
 	game     *state.GameMode
+	store    *store.Store
+	proxy    *proxy.Proxy
 
 	diskMu     sync.Mutex
 	diskAt     time.Time
@@ -77,6 +82,18 @@ func main() {
 	defer stopMem()
 	go s.mem.Run(memCtx, s.ollamaVRAM)
 
+	// La base de datos es opcional: si falla, el dashboard sigue funcionando.
+	dbPath := filepath.Join(state.DataDir(), "ballast.db")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		log.Printf("aviso: sin base de datos (%v); no se contarán tokens", err)
+	} else {
+		s.store = st
+		defer st.Close()
+		log.Printf("base de datos: %s", st)
+	}
+	s.proxy = proxy.New(u, s.store)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
 	mux.HandleFunc("GET /api/v1/models", s.handleModels)
@@ -84,12 +101,15 @@ func main() {
 	mux.HandleFunc("GET /api/v1/ps", s.handlePS)
 	mux.HandleFunc("GET /api/v1/memory", s.handleMemory)
 	mux.HandleFunc("GET /api/v1/disk", s.handleDisk)
+	mux.HandleFunc("GET /api/v1/usage/summary", s.handleUsageSummary)
+	mux.HandleFunc("GET /api/v1/usage/series", s.handleUsageSeries)
+	mux.HandleFunc("GET /api/v1/usage/export.csv", s.handleUsageCSV)
 	mux.HandleFunc("GET /api/v1/game-mode", s.handleGameModeStatus)
 	mux.HandleFunc("POST /api/v1/game-mode", s.handleGameMode)
 	mux.HandleFunc("POST /api/v1/models/{name}/unload", s.handleUnload)
 	mux.HandleFunc("POST /api/v1/models/{name}/load", s.handleLoad)
 	mux.HandleFunc("POST /api/v1/vram/release", s.handleReleaseVRAM)
-	mux.Handle("/", staticHandler())
+	mux.Handle("/", s.rootHandler())
 
 	srv := &http.Server{
 		Addr:              *listen,
@@ -430,6 +450,66 @@ func (s *server) handleGameMode(w http.ResponseWriter, r *http.Request) {
 		log.Printf("modo juego desactivado")
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// rootHandler sirve los tres archivos de la interfaz y manda el resto a Ollama.
+// Así el proxy queda en medio de todo el tráfico sin tocar la API del dashboard.
+func (s *server) rootHandler() http.Handler {
+	static := staticHandler()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/", "/index.html", "/app.js", "/styles.css":
+			static.ServeHTTP(w, r)
+		default:
+			s.proxy.ServeHTTP(w, r)
+		}
+	})
+}
+
+// ---------- uso y tokens ----------
+
+func (s *server) handleUsageSummary(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "base de datos no disponible"})
+		return
+	}
+	summary, err := s.store.Summary(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+func (s *server) handleUsageSeries(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "base de datos no disponible"})
+		return
+	}
+	days := 14
+	if v := r.URL.Query().Get("days"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			days = n
+		}
+	}
+	series, err := s.store.Series(r.Context(), days)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"days": days, "series": series})
+}
+
+func (s *server) handleUsageCSV(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "base de datos no disponible"})
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="ballast-uso.csv"`)
+	if err := s.store.ExportCSV(r.Context(), w); err != nil {
+		log.Printf("exportar CSV: %v", err)
+	}
 }
 
 // handleDisk devuelve el espacio de los discos reales. Se cachea 10 s.

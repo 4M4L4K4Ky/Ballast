@@ -1,6 +1,5 @@
-// Package proxy implementa el proxy inverso :11435 -> :11434 y la extracción
-// de contadores de tokens.
+// Package proxy reenvía a Ollama todo lo que no es del dashboard y anota los
+// tokens de cada generación sin alterar ni bloquear la petición.
 //
-// Regla crítica (SPEC.md §2.1): nunca puede bloquear ni alterar una petición.
-// Si la escritura de métricas falla, se descarta la métrica y la petición sigue.
+// Ver SPEC.md §2.1 y §4.2.
 package proxy

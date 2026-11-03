@@ -35,6 +35,12 @@ const el = {
   gameBar: document.getElementById('game-bar'),
   gameExit: document.getElementById('game-exit'),
   gameDetail: document.getElementById('game-detail'),
+  cardTokens: document.getElementById('card-tokens'),
+  tokens: document.getElementById('stat-tokens'),
+  usagePanel: document.getElementById('usage-panel'),
+  usageHint: document.getElementById('usage-hint'),
+  usageBars: document.getElementById('usage-bars'),
+  usageBody: document.getElementById('usage-body'),
   diskPanel: document.getElementById('disk-panel'),
   diskHint: document.getElementById('disk-hint'),
   diskList: document.getElementById('disk-list'),
@@ -70,6 +76,13 @@ function bytes(n) {
 function ctx(n) {
   if (!n) return '—';
   return n >= 1024 ? `${Math.round(n / 1024)}K` : String(n);
+}
+
+function tokens(n) {
+  if (!n) return '0';
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1).replace('.', ',')} M`;
+  if (n >= 1e4) return `${(n / 1e3).toFixed(1).replace('.', ',')} k`;
+  return n.toLocaleString('es-ES');
 }
 
 function count(n) {
@@ -514,6 +527,60 @@ el.releaseAll.addEventListener('click', async () => {
   }
 });
 
+// ---------- consumo de tokens ----------
+
+const USAGE_REFRESH_MS = 10000;
+
+async function refreshUsage() {
+  try {
+    const [summary, series] = await Promise.all([
+      api('/api/v1/usage/summary'),
+      api('/api/v1/usage/series?days=14'),
+    ]);
+    renderUsage(summary, series);
+  } catch {
+    el.usagePanel.hidden = true;
+    el.cardTokens.hidden = true;
+  }
+}
+
+function renderUsage(summary, series) {
+  el.usagePanel.hidden = false;
+  el.cardTokens.hidden = false;
+
+  const today = (summary.today?.prompt_tokens || 0) + (summary.today?.completion_tokens || 0);
+  const total = (summary.total?.prompt_tokens || 0) + (summary.total?.completion_tokens || 0);
+  el.tokens.textContent = tokens(today);
+  el.usageHint.textContent =
+    `${summary.total?.requests || 0} peticiones · ${tokens(total)} tokens en total`;
+
+  const days = series?.series || [];
+  const max = Math.max(1, ...days.map((d) => (d.prompt_tokens || 0) + (d.completion_tokens || 0)));
+  el.usageBars.innerHTML = days.map((d) => {
+    const value = (d.prompt_tokens || 0) + (d.completion_tokens || 0);
+    const height = value ? Math.max(4, (value / max) * 100) : 0;
+    const day = d.date.slice(8).replace(/^0/, '');
+    return `<div class="usage-day${value ? '' : ' zero'}"
+                 title="${esc(`${d.date}: ${tokens(value)} tokens`)}">
+      <div class="usage-bar"><i style="height:${height.toFixed(1)}%"></i></div>
+      <span>${esc(day)}</span>
+    </div>`;
+  }).join('');
+
+  const models = summary.models || [];
+  el.usageBody.innerHTML = models.length
+    ? models.map((m) => `
+      <tr>
+        <td>${esc(m.model)}</td>
+        <td>${m.requests.toLocaleString('es-ES')}</td>
+        <td>${tokens(m.prompt_tokens)}</td>
+        <td>${tokens(m.completion_tokens)}</td>
+        <td>${tokens(m.prompt_tokens + m.completion_tokens)}</td>
+        <td class="dim">${esc(date(m.last_seen))}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="6" class="empty">Aún no hay peticiones contadas. Usa un modelo a través del puerto 11435.</td></tr>';
+}
+
 // ---------- almacenamiento ----------
 
 const DISK_REFRESH_MS = 30000;
@@ -771,10 +838,16 @@ setInterval(() => {
   if (!document.hidden) refreshDisk();
 }, DISK_REFRESH_MS);
 
+refreshUsage();
+setInterval(() => {
+  if (!document.hidden) refreshUsage();
+}, USAGE_REFRESH_MS);
+
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     refresh();
     refreshMemory();
     refreshDisk();
+    refreshUsage();
   }
 });

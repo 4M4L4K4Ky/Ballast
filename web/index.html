@@ -57,6 +57,10 @@
         <p class="card-label">Total modelos</p>
         <p class="card-value" id="stat-total">—</p>
       </article>
+      <article class="card" id="card-tokens" hidden>
+        <p class="card-label">Tokens hoy</p>
+        <p class="card-value" id="stat-tokens">—</p>
+      </article>
     </section>
 
     <section class="vram-bar" id="vram-bar" hidden>
@@ -123,6 +127,36 @@
           </tbody>
         </table>
       </div>
+    </section>
+
+    <section class="panel usage-panel" id="usage-panel" hidden>
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2>Consumo</h2>
+          <span class="hint" id="usage-hint">—</span>
+        </div>
+        <a class="link" href="/api/v1/usage/export.csv" download>Exportar CSV</a>
+      </div>
+      <div class="usage-bars" id="usage-bars"></div>
+      <div class="table-wrap">
+        <table class="usage-table">
+          <thead>
+            <tr>
+              <th>Modelo</th>
+              <th>Peticiones</th>
+              <th>Entrada</th>
+              <th>Salida</th>
+              <th>Total</th>
+              <th>Último uso</th>
+            </tr>
+          </thead>
+          <tbody id="usage-body"></tbody>
+        </table>
+      </div>
+      <p class="usage-note">
+        Solo se cuentan las peticiones enviadas a este puerto (11435), no las que
+        van directas a Ollama (11434).
+      </p>
     </section>
 
     <section class="panel disk-panel" id="disk-panel" hidden>
