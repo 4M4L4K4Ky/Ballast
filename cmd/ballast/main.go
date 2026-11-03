@@ -1,0 +1,307 @@
+// Ballast es un dashboard local para controlar Ollama.
+// Este binario sirve la interfaz web y una API mínima sobre la API de Ollama.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"io/fs"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/4M4L4K4Ky/ballast"
+)
+
+// version se sobreescribe en tiempo de compilación con -ldflags.
+var version = "0.0.1-dev"
+
+const (
+	defaultListen    = "127.0.0.1:11435"
+	defaultOllamaURL = "http://127.0.0.1:11434"
+)
+
+type server struct {
+	ollama   *url.URL
+	client   *http.Client
+	started  time.Time
+	listenOn string
+}
+
+func main() {
+	listen := flag.String("listen", envOr("BALLAST_LISTEN", defaultListen), "dirección de escucha")
+	ollamaURL := flag.String("ollama", envOr("BALLAST_OLLAMA_URL", defaultOllamaURL), "URL de Ollama")
+	showVersion := flag.Bool("version", false, "muestra la versión y sale")
+	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("ballast", version)
+		return
+	}
+
+	u, err := url.Parse(*ollamaURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		log.Fatalf("URL de Ollama inválida: %q", *ollamaURL)
+	}
+
+	s := &server{
+		ollama:   u,
+		client:   &http.Client{Timeout: 60 * time.Second},
+		started:  time.Now(),
+		listenOn: *listen,
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
+	mux.HandleFunc("GET /api/v1/models", s.handleModels)
+	mux.HandleFunc("GET /api/v1/ps", s.handlePS)
+	mux.HandleFunc("POST /api/v1/models/{name}/unload", s.handleUnload)
+	mux.Handle("/", staticHandler())
+
+	srv := &http.Server{
+		Addr:              *listen,
+		Handler:           logRequests(mux),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	go func() {
+		log.Printf("ballast %s escuchando en http://%s (Ollama en %s)", version, *listen, u)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("servidor: %v", err)
+		}
+	}()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	<-stop
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("apagado: %v", err)
+	}
+	log.Println("ballast detenido")
+}
+
+// ---------- API ----------
+
+type statusResponse struct {
+	Version       string `json:"version"`
+	OllamaURL     string `json:"ollama_url"`
+	OllamaVersion string `json:"ollama_version,omitempty"`
+	Reachable     bool   `json:"reachable"`
+	UptimeSeconds int64  `json:"uptime_seconds"`
+	Error         string `json:"error,omitempty"`
+}
+
+func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	resp := statusResponse{
+		Version:       version,
+		OllamaURL:     s.ollama.String(),
+		UptimeSeconds: int64(time.Since(s.started).Seconds()),
+	}
+
+	var v struct {
+		Version string `json:"version"`
+	}
+	if err := s.ollamaJSON(r.Context(), http.MethodGet, "/api/version", nil, &v); err != nil {
+		resp.Error = err.Error()
+	} else {
+		resp.Reachable = true
+		resp.OllamaVersion = v.Version
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+type modelDetails struct {
+	Family            string `json:"family"`
+	ParameterSize     string `json:"parameter_size"`
+	QuantizationLevel string `json:"quantization_level"`
+	ContextLength     int64  `json:"context_length"`
+}
+
+type model struct {
+	Name         string       `json:"name"`
+	Size         int64        `json:"size"`
+	Digest       string       `json:"digest"`
+	ModifiedAt   time.Time    `json:"modified_at"`
+	Details      modelDetails `json:"details"`
+	Capabilities []string     `json:"capabilities"`
+	Loaded       bool         `json:"loaded"`
+	SizeVRAM     int64        `json:"size_vram"`
+	ExpiresAt    *time.Time   `json:"expires_at,omitempty"`
+}
+
+func (s *server) handleModels(w http.ResponseWriter, r *http.Request) {
+	models, err := s.listModels(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"models": models})
+}
+
+func (s *server) handlePS(w http.ResponseWriter, r *http.Request) {
+	var ps struct {
+		Models []struct {
+			Name      string    `json:"name"`
+			Size      int64     `json:"size"`
+			SizeVRAM  int64     `json:"size_vram"`
+			ExpiresAt time.Time `json:"expires_at"`
+		} `json:"models"`
+	}
+	if err := s.ollamaJSON(r.Context(), http.MethodGet, "/api/ps", nil, &ps); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, ps)
+}
+
+func (s *server) handleUnload(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "falta el nombre del modelo"})
+		return
+	}
+
+	body := map[string]any{"model": name, "keep_alive": 0}
+	if err := s.ollamaJSON(r.Context(), http.MethodPost, "/api/generate", body, nil); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	log.Printf("modelo expulsado: %s", name)
+	writeJSON(w, http.StatusOK, map[string]string{"unloaded": name})
+}
+
+func (s *server) listModels(ctx context.Context) ([]model, error) {
+	var tags struct {
+		Models []model `json:"models"`
+	}
+	if err := s.ollamaJSON(ctx, http.MethodGet, "/api/tags", nil, &tags); err != nil {
+		return nil, err
+	}
+
+	var ps struct {
+		Models []struct {
+			Name      string    `json:"name"`
+			Size      int64     `json:"size"`
+			SizeVRAM  int64     `json:"size_vram"`
+			ExpiresAt time.Time `json:"expires_at"`
+		} `json:"models"`
+	}
+	if err := s.ollamaJSON(ctx, http.MethodGet, "/api/ps", nil, &ps); err != nil {
+		return nil, err
+	}
+
+	loaded := make(map[string]struct {
+		vram    int64
+		expires time.Time
+	}, len(ps.Models))
+	for _, m := range ps.Models {
+		loaded[m.Name] = struct {
+			vram    int64
+			expires time.Time
+		}{m.SizeVRAM, m.ExpiresAt}
+	}
+
+	for i := range tags.Models {
+		if l, ok := loaded[tags.Models[i].Name]; ok {
+			tags.Models[i].Loaded = true
+			tags.Models[i].SizeVRAM = l.vram
+			exp := l.expires
+			tags.Models[i].ExpiresAt = &exp
+		}
+	}
+	return tags.Models, nil
+}
+
+// ---------- cliente de Ollama ----------
+
+func (s *server) ollamaJSON(ctx context.Context, method, path string, in, out any) error {
+	var body io.Reader
+	if in != nil {
+		raw, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		body = strings.NewReader(string(raw))
+	}
+
+	target := s.ollama.JoinPath(path).String()
+	req, err := http.NewRequestWithContext(ctx, method, target, body)
+	if err != nil {
+		return err
+	}
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("no se pudo hablar con Ollama en %s: %w", s.ollama, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("Ollama respondió %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+	}
+	if out == nil {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// ---------- utilidades HTTP ----------
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func staticHandler() http.Handler {
+	sub, err := fs.Sub(ballast.WebFS, "web")
+	if err != nil {
+		panic(err)
+	}
+	files := http.FileServerFS(sub)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path != "" {
+			if _, err := fs.Stat(sub, path); err != nil {
+				// Fallback de SPA: cualquier ruta desconocida sirve index.html.
+				r.URL.Path = "/"
+			}
+		}
+		w.Header().Set("Cache-Control", "no-cache")
+		files.ServeHTTP(w, r)
+	})
+}
+
+func logRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			log.Printf("%s %s (%s)", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
+		}
+	})
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}

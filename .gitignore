@@ -1,8 +1,8 @@
 # binarios y artefactos de compilación
 /bin/
 /dist/
-ballast
-ballast.exe
+/ballast
+/ballast.exe
 
 # base de datos local
 *.db
