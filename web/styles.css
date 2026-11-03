@@ -259,7 +259,7 @@ main {
 }
 
 .sw.ollama { background: var(--accent); }
-.sw.other { background: color-mix(in srgb, var(--muted) 55%, transparent); }
+.sw.other { background: var(--accent-2); opacity: 0.7; }
 .sw.gtt {
   width: 12px;
   height: 0;
@@ -291,14 +291,14 @@ main {
 
 .mem-empty[hidden] { display: none; }
 
-.area-ollama { fill: var(--accent); fill-opacity: 0.32; }
-.area-other { fill: var(--muted); fill-opacity: 0.2; }
+.area-ollama { fill: var(--accent); fill-opacity: 0.45; stroke: var(--accent); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.area-other { fill: var(--accent-2); fill-opacity: 0.28; stroke: var(--accent-2); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .line-gtt {
   fill: none;
   stroke: var(--warn);
-  stroke-width: 1.5;
-  stroke-dasharray: 4 3;
-  opacity: 0.85;
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
+  opacity: 0.95;
   vector-effect: non-scaling-stroke;
 }
 .mem-grid { stroke: var(--border); stroke-width: 1; }
