@@ -317,6 +317,7 @@ Objetivo: liberar VRAM cuando no molesta, **jamás** interrumpir algo en curso.
 | GET | `/models/:name` | Detalle: metadatos, pulls, uso agregado |
 | DELETE | `/models/:name` | Borra el modelo y registra el evento |
 | POST | `/models/:name/unload` | `{"keep_alive": 0}` |
+| POST | `/vram/release` | Expulsa de golpe todos los modelos cargados |
 | POST | `/models/:name/load` | Carga con el `keep_alive` indicado |
 | PUT | `/models/:name/keepalive` | Fija `keep_alive` por defecto |
 | PUT | `/models/:name/pinned` | Protege o desprotege de la auto-expulsión |
@@ -351,7 +352,9 @@ claro opcional.
   La tarjeta de tamaño es la suma de los modelos, no el disco del sistema: el
   disco va aparte, en el panel de Almacenamiento (§8.7).
 - Barra de modelos cargados: tamaño en VRAM, tiempo restante de `keep_alive`,
-  candado si está fijado, botón **Expulsar**.
+  candado si está fijado, botón **Expulsar** y botón destacado **Liberar toda la
+  VRAM** para dejar la GPU libre al terminar de trabajar. La barra solo aparece
+  si hay algo cargado.
 - Gráfico de área de tokens por día (30 días), una serie por modelo.
 - Últimos 10 eventos, incluidos los `auto-unload` con su motivo.
 

@@ -11,6 +11,10 @@ const el = {
   vram: document.getElementById('stat-vram'),
   total: document.getElementById('stat-total'),
   body: document.getElementById('models-body'),
+  vramBar: document.getElementById('vram-bar'),
+  vramCount: document.getElementById('vram-count'),
+  vramDetail: document.getElementById('vram-detail'),
+  releaseAll: document.getElementById('release-all'),
   toast: document.getElementById('toast'),
 };
 
@@ -93,6 +97,14 @@ function render(models) {
   el.vram.textContent = vram ? bytes(vram) : '0 B';
   el.total.textContent = bytes(totalSize);
 
+  el.vramBar.hidden = loaded.length === 0;
+  if (loaded.length) {
+    el.vramCount.textContent = loaded.length === 1
+      ? '1 modelo ocupando la GPU'
+      : `${loaded.length} modelos ocupando la GPU`;
+    el.vramDetail.textContent = `${loaded.map((m) => m.name).join(', ')} · ${bytes(vram)}`;
+  }
+
   if (!models.length) {
     el.body.innerHTML = '<tr><td colspan="7" class="empty">No hay modelos instalados.</td></tr>';
     return;
@@ -140,6 +152,23 @@ el.body.addEventListener('click', async (event) => {
     toast(err.message, 'err');
     btn.disabled = false;
     btn.textContent = 'Expulsar';
+  }
+});
+
+el.releaseAll.addEventListener('click', async () => {
+  if (!confirm('¿Expulsar todos los modelos de la VRAM? Se liberará la GPU para jugar.')) return;
+  el.releaseAll.disabled = true;
+  el.releaseAll.textContent = 'Liberando…';
+  try {
+    const res = await api('/api/v1/vram/release', { method: 'POST' });
+    const n = (res.unloaded || []).length;
+    toast(n ? `VRAM liberada: ${n} modelo(s) expulsado(s)` : 'No había nada cargado', 'ok');
+    await refresh();
+  } catch (err) {
+    toast(err.message, 'err');
+  } finally {
+    el.releaseAll.disabled = false;
+    el.releaseAll.textContent = 'Liberar toda la VRAM';
   }
 });
 

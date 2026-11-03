@@ -65,6 +65,7 @@ func main() {
 	mux.HandleFunc("GET /api/v1/models", s.handleModels)
 	mux.HandleFunc("GET /api/v1/ps", s.handlePS)
 	mux.HandleFunc("POST /api/v1/models/{name}/unload", s.handleUnload)
+	mux.HandleFunc("POST /api/v1/vram/release", s.handleReleaseVRAM)
 	mux.Handle("/", staticHandler())
 
 	srv := &http.Server{
@@ -180,6 +181,39 @@ func (s *server) handleUnload(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("modelo expulsado: %s", name)
 	writeJSON(w, http.StatusOK, map[string]string{"unloaded": name})
+}
+
+// handleReleaseVRAM expulsa de la VRAM todos los modelos cargados de golpe.
+// Pensado para liberar la GPU al terminar de trabajar.
+func (s *server) handleReleaseVRAM(w http.ResponseWriter, r *http.Request) {
+	var ps struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := s.ollamaJSON(r.Context(), http.MethodGet, "/api/ps", nil, &ps); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		return
+	}
+
+	unloaded := make([]string, 0, len(ps.Models))
+	failed := make(map[string]string)
+	for _, m := range ps.Models {
+		body := map[string]any{"model": m.Name, "keep_alive": 0}
+		if err := s.ollamaJSON(r.Context(), http.MethodPost, "/api/generate", body, nil); err != nil {
+			failed[m.Name] = err.Error()
+			continue
+		}
+		unloaded = append(unloaded, m.Name)
+	}
+
+	if len(unloaded) > 0 {
+		log.Printf("VRAM liberada: %s", strings.Join(unloaded, ", "))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"unloaded": unloaded,
+		"failed":   failed,
+	})
 }
 
 func (s *server) listModels(ctx context.Context) ([]model, error) {
