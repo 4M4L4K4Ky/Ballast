@@ -35,6 +35,9 @@ const el = {
   gameBar: document.getElementById('game-bar'),
   gameExit: document.getElementById('game-exit'),
   gameDetail: document.getElementById('game-detail'),
+  diskPanel: document.getElementById('disk-panel'),
+  diskHint: document.getElementById('disk-hint'),
+  diskList: document.getElementById('disk-list'),
   memPanel: document.getElementById('mem-panel'),
   memHint: document.getElementById('mem-hint'),
   memChart: document.getElementById('mem-chart'),
@@ -511,6 +514,58 @@ el.releaseAll.addEventListener('click', async () => {
   }
 });
 
+// ---------- almacenamiento ----------
+
+const DISK_REFRESH_MS = 30000;
+
+async function refreshDisk() {
+  try {
+    renderDisk(await api('/api/v1/disk'));
+  } catch {
+    el.diskPanel.hidden = true;
+  }
+}
+
+function renderDisk(report) {
+  const filesystems = report?.filesystems || [];
+  if (!filesystems.length) {
+    el.diskPanel.hidden = true;
+    return;
+  }
+  el.diskPanel.hidden = false;
+
+  const models = filesystems.find((f) => f.contains_models);
+  if (report.remote) {
+    el.diskHint.textContent = 'Disco de este equipo, no el de Ollama';
+  } else if (!report.models_dir_exists) {
+    el.diskHint.textContent = 'No se encontró el directorio de modelos';
+  } else if (models) {
+    el.diskHint.textContent = `${bytes(models.free_bytes)} libres donde viven los modelos`;
+  } else {
+    el.diskHint.textContent = '';
+  }
+
+  el.diskList.innerHTML = filesystems.map((f) => {
+    const total = f.total_bytes || 1;
+    const pct = Math.min(100, Math.max(0, f.used_percent || 0));
+    const low = f.free_bytes / total < 0.1;
+    const badge = f.contains_models ? '<span class="badge loaded">modelos</span>' : '';
+    const device = [f.device, f.fstype].filter(Boolean).join(' · ');
+    return `
+      <div class="disk-row${low ? ' low' : ''}">
+        <div class="disk-head">
+          <span class="disk-mount">${esc(f.mount)}${badge}</span>
+          <span class="disk-size">${bytes(f.free_bytes)} libres de ${bytes(f.total_bytes)}</span>
+        </div>
+        <div class="disk-bar"><i style="width:${pct.toFixed(1)}%"></i></div>
+        <div class="disk-meta">
+          <span>${bytes(f.used_bytes)} usados · ${pct.toFixed(0)} %${low ? ' · queda poco espacio' : ''}</span>
+          <span class="dim">${esc(device)}</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
 // ---------- modo juego ----------
 
 function setGameModeUI(enabled, since) {
@@ -711,9 +766,15 @@ setInterval(() => {
   if (!document.hidden) refreshMemory();
 }, MEM_POLL_MS);
 
+refreshDisk();
+setInterval(() => {
+  if (!document.hidden) refreshDisk();
+}, DISK_REFRESH_MS);
+
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     refresh();
     refreshMemory();
+    refreshDisk();
   }
 });

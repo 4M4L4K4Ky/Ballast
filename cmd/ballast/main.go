@@ -17,10 +17,12 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/4M4L4K4Ky/Ballast"
+	"github.com/4M4L4K4Ky/Ballast/internal/disk"
 	"github.com/4M4L4K4Ky/Ballast/internal/mem"
 	"github.com/4M4L4K4Ky/Ballast/internal/state"
 )
@@ -40,6 +42,10 @@ type server struct {
 	listenOn string
 	mem      *mem.Sampler
 	game     *state.GameMode
+
+	diskMu     sync.Mutex
+	diskAt     time.Time
+	diskReport *disk.Report
 }
 
 func main() {
@@ -77,6 +83,7 @@ func main() {
 	mux.HandleFunc("GET /api/v1/models/{name}", s.handleModel)
 	mux.HandleFunc("GET /api/v1/ps", s.handlePS)
 	mux.HandleFunc("GET /api/v1/memory", s.handleMemory)
+	mux.HandleFunc("GET /api/v1/disk", s.handleDisk)
 	mux.HandleFunc("GET /api/v1/game-mode", s.handleGameModeStatus)
 	mux.HandleFunc("POST /api/v1/game-mode", s.handleGameMode)
 	mux.HandleFunc("POST /api/v1/models/{name}/unload", s.handleUnload)
@@ -423,6 +430,42 @@ func (s *server) handleGameMode(w http.ResponseWriter, r *http.Request) {
 		log.Printf("modo juego desactivado")
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleDisk devuelve el espacio de los discos reales. Se cachea 10 s.
+func (s *server) handleDisk(w http.ResponseWriter, r *http.Request) {
+	s.diskMu.Lock()
+	defer s.diskMu.Unlock()
+
+	if s.diskReport != nil && time.Since(s.diskAt) < 10*time.Second {
+		writeJSON(w, http.StatusOK, s.diskReport)
+		return
+	}
+
+	modelsDir, exists := disk.ModelsDir()
+	filesystems, err := disk.List(modelsDir)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	report := &disk.Report{
+		ModelsDir:       modelsDir,
+		ModelsDirExists: exists,
+		Remote:          !isLocalHost(s.ollama.Hostname()),
+		Filesystems:     filesystems,
+	}
+	s.diskReport = report
+	s.diskAt = time.Now()
+	writeJSON(w, http.StatusOK, report)
+}
+
+func isLocalHost(host string) bool {
+	switch host {
+	case "localhost", "127.0.0.1", "::1", "0.0.0.0":
+		return true
+	}
+	return false
 }
 
 type memoryResponse struct {
