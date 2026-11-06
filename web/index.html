@@ -41,71 +41,70 @@
       <button id="game-exit">Salir del modo juego</button>
     </section>
 
+    <!-- Resumen: siempre visible -->
+    <section class="cards">
+      <article class="card">
+        <p class="card-label">Modelos instalados</p>
+        <p class="card-value" id="stat-models">—</p>
+      </article>
+      <article class="card">
+        <p class="card-label">En VRAM</p>
+        <p class="card-value" id="stat-loaded">—</p>
+      </article>
+      <article class="card">
+        <p class="card-label">VRAM ocupada</p>
+        <p class="card-value" id="stat-vram">—</p>
+      </article>
+      <article class="card">
+        <p class="card-label">Total modelos</p>
+        <p class="card-value" id="stat-total">—</p>
+      </article>
+      <article class="card" id="card-tokens" hidden>
+        <p class="card-label">Tokens hoy</p>
+        <p class="card-value" id="stat-tokens">—</p>
+      </article>
+    </section>
+
+    <section class="vram-bar" id="vram-bar" hidden>
+      <div class="vram-info">
+        <span class="vram-dot"></span>
+        <div>
+          <strong id="vram-count">—</strong>
+          <p class="vram-detail" id="vram-detail"></p>
+        </div>
+      </div>
+      <button id="release-all" class="danger" title="Expulsa todos los modelos cargados para dejar la GPU libre">
+        Liberar toda la VRAM
+      </button>
+    </section>
+
+    <section class="panel mem-panel" id="mem-panel" hidden>
+      <div class="panel-head">
+        <div class="panel-title">
+          <h2>Memoria de la GPU</h2>
+          <span class="hint" id="mem-hint">—</span>
+        </div>
+        <div class="mem-legend">
+          <span><i class="sw ollama"></i>Ollama</span>
+          <span><i class="sw other"></i>Otros</span>
+          <span><i class="sw gtt"></i>GTT</span>
+        </div>
+      </div>
+      <div class="mem-chart" id="mem-chart">
+        <svg id="mem-svg" aria-hidden="true"></svg>
+        <p class="mem-empty" id="mem-empty">Recopilando datos…</p>
+      </div>
+    </section>
+
+    <!-- Pestañas: solo las secciones siguientes -->
     <nav class="tabs" role="tablist" aria-label="Secciones">
-      <button class="tab" data-tab="resumen" role="tab">Resumen</button>
       <button class="tab" data-tab="modelos" role="tab">Modelos</button>
       <button class="tab" data-tab="consumo" role="tab">Consumo</button>
       <button class="tab" data-tab="almacenamiento" role="tab">Almacenamiento</button>
       <button class="tab" data-tab="auto" role="tab">Auto-expulsión</button>
     </nav>
 
-    <div class="tab-panel" data-tab="resumen">
-      <section class="cards">
-        <article class="card">
-          <p class="card-label">Modelos instalados</p>
-          <p class="card-value" id="stat-models">—</p>
-        </article>
-        <article class="card">
-          <p class="card-label">En VRAM</p>
-          <p class="card-value" id="stat-loaded">—</p>
-        </article>
-        <article class="card">
-          <p class="card-label">VRAM ocupada</p>
-          <p class="card-value" id="stat-vram">—</p>
-        </article>
-        <article class="card">
-          <p class="card-label">Total modelos</p>
-          <p class="card-value" id="stat-total">—</p>
-        </article>
-        <article class="card" id="card-tokens" hidden>
-          <p class="card-label">Tokens hoy</p>
-          <p class="card-value" id="stat-tokens">—</p>
-        </article>
-      </section>
-
-      <section class="vram-bar" id="vram-bar" hidden>
-        <div class="vram-info">
-          <span class="vram-dot"></span>
-          <div>
-            <strong id="vram-count">—</strong>
-            <p class="vram-detail" id="vram-detail"></p>
-          </div>
-        </div>
-        <button id="release-all" class="danger" title="Expulsa todos los modelos cargados para dejar la GPU libre">
-          Liberar toda la VRAM
-        </button>
-      </section>
-
-      <section class="panel mem-panel" id="mem-panel" hidden>
-        <div class="panel-head">
-          <div class="panel-title">
-            <h2>Memoria de la GPU</h2>
-            <span class="hint" id="mem-hint">—</span>
-          </div>
-          <div class="mem-legend">
-            <span><i class="sw ollama"></i>Ollama</span>
-            <span><i class="sw other"></i>Otros</span>
-            <span><i class="sw gtt"></i>GTT</span>
-          </div>
-        </div>
-        <div class="mem-chart" id="mem-chart">
-          <svg id="mem-svg" aria-hidden="true"></svg>
-          <p class="mem-empty" id="mem-empty">Recopilando datos…</p>
-        </div>
-      </section>
-    </div>
-
-    <div class="tab-panel" data-tab="modelos" hidden>
+    <div class="tab-panel" data-tab="modelos">
       <section class="panel">
         <div class="panel-head">
           <div class="panel-title">

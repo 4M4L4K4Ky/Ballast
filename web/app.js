@@ -1006,8 +1006,8 @@ el.gameExit.addEventListener('click', () => setGameMode(false));
 // ---------- pestañas ----------
 
 const LS_TAB_KEY = 'ballast.tab';
-const VALID_TABS = ['resumen', 'modelos', 'consumo', 'almacenamiento', 'auto'];
-let activeTab = 'resumen';
+const VALID_TABS = ['modelos', 'consumo', 'almacenamiento', 'auto'];
+let activeTab = 'modelos';
 
 function setTab(name) {
   if (!VALID_TABS.includes(name)) name = 'resumen';
@@ -1022,9 +1022,7 @@ function setTab(name) {
   activeTab = name;
   localStorage.setItem(LS_TAB_KEY, name);
 
-  // Al entrar en una pestaña se refresca su contenido, así las gráficas se
-  // redibujan con el ancho real del contenedor (que estaba oculto).
-  if (name === 'resumen') refreshMemory();
+  // Al entrar en una pestaña se refresca su contenido.
   if (name === 'consumo') refreshUsage();
   if (name === 'almacenamiento') refreshDisk();
   if (name === 'auto') refreshAuto();
@@ -1187,12 +1185,13 @@ window.addEventListener('resize', () => {
 refresh();
 setInterval(refresh, REFRESH_MS);
 
-const initialTab = localStorage.getItem(LS_TAB_KEY) || 'resumen';
-setTab(initialTab);
+const initialTab = localStorage.getItem(LS_TAB_KEY) || 'modelos';
+// Si quedó guardada la pestaña 'resumen' de la versión anterior, se ignora.
+setTab(VALID_TABS.includes(initialTab) ? initialTab : 'modelos');
 
 refreshMemory();
 setInterval(() => {
-  if (!document.hidden && activeTab === 'resumen') refreshMemory();
+  if (!document.hidden) refreshMemory();
 }, MEM_POLL_MS);
 
 refreshDisk();
