@@ -111,30 +111,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.StatusCode)
 
 	streaming := isStreaming(resp.Header.Get("Content-Type"))
-	capture := &captureWriter{max: captureLimit}
-	var writer io.Writer = io.MultiWriter(w, capture)
 	if streaming {
 		if flusher, ok := w.(http.Flusher); ok {
-			writer = &flushWriter{w: w, f: flusher, capture: capture}
+			fw := &flushWriter{w: w, f: flusher}
+			_, _ = io.Copy(fw, resp.Body)
+			return
 		}
 	}
-
-	_, copyErr := io.Copy(writer, resp.Body)
-
-	model, promptTokens, completionTokens, duration := extract(capture.bytes())
-	if duration == 0 {
-		duration = time.Since(start).Milliseconds()
-	}
-	errText := ""
-	if copyErr != nil {
-		errText = copyErr.Error()
-	} else if resp.StatusCode >= 400 {
-		errText = strings.TrimSpace(string(capture.bytes()))
-	}
-
-	if isGeneration(r.URL.Path) || promptTokens > 0 || completionTokens > 0 {
-		p.recordModel(r, resp.StatusCode, model, promptTokens, completionTokens, duration, start, streaming, errText)
-	}
+	_, _ = io.Copy(w, resp.Body)
 }
 
 // record guarda un fallo de conexión sin contadores.
@@ -332,14 +316,12 @@ func (c *captureWriter) bytes() []byte { return c.buf }
 
 // flushWriter escribe en el cliente, vacía el búfer y guarda copia.
 type flushWriter struct {
-	w       io.Writer
-	f       http.Flusher
-	capture *captureWriter
+	w io.Writer
+	f http.Flusher
 }
 
 func (fw *flushWriter) Write(p []byte) (int, error) {
 	n, err := fw.w.Write(p)
-	fw.capture.append(p[:n])
 	fw.f.Flush()
 	return n, err
 }

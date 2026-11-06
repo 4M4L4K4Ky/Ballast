@@ -33,10 +33,8 @@ go build -o ballast ./cmd/ballast
   modelos marcado y aviso si queda poco.
 - **Descargas**: botón Descargar con barra de progreso agregada y cancelación
   limpia a mitad.
-- **Consumo**: proxy en `:11435` que cuenta tokens de entrada y salida por
-  modelo, gráfica de 14 días y exportación a CSV.
-- **Interfaz por pestañas**: Resumen siempre visible; Modelos, Consumo,
-  Almacenamiento y Auto-expulsión en pestañas. Tema oscuro/claro automático.
+- **Interfaz por pestañas**: Resumen siempre visible; Modelos, Almacenamiento y
+  Auto-expulsión en pestañas. Tema oscuro/claro automático.
 
 ## Capturas
 
@@ -44,21 +42,15 @@ go build -o ballast ./cmd/ballast
 |---|---|
 | ![Resumen](assets/screenshot-resumen.png) | ![Modelos](assets/screenshot-modelos.png) |
 
-| Consumo | Almacenamiento | Auto-expulsión |
-|---|---|---|
-| ![Consumo](assets/screenshot-consumo.png) | ![Almacenamiento](assets/screenshot-almacenamiento.png) | ![Auto-expulsión](assets/screenshot-auto.png) |
+| Almacenamiento | Auto-expulsión |
+|---|---|
+| ![Almacenamiento](assets/screenshot-almacenamiento.png) | ![Auto-expulsión](assets/screenshot-auto.png) |
 
 ## El puerto importa
 
 Ballast escucha en **11435** y reenvía todo lo que no es su propia API a Ollama
-en **11434**. Para que el contador de tokens vea algo, tus clientes tienen que
-apuntar a `http://127.0.0.1:11435`:
-
-```sh
-export OLLAMA_HOST=http://127.0.0.1:11435
-```
-
-Si van directos a `11434`, funcionan igual pero Ballast no los cuenta.
+en **11434**. Puedes usar `http://127.0.0.1:11435` como si fuera Ollama sin
+cambiar nada; si tus clientes van directos a `11434`, funcionan igual.
 
 ## Estado
 

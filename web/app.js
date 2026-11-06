@@ -37,12 +37,6 @@ const el = {
   gameDetail: document.getElementById('game-detail'),
   tabs: document.querySelectorAll('.tab'),
   tabPanels: document.querySelectorAll('.tab-panel'),
-  cardTokens: document.getElementById('card-tokens'),
-  tokens: document.getElementById('stat-tokens'),
-  usagePanel: document.getElementById('usage-panel'),
-  usageHint: document.getElementById('usage-hint'),
-  usageBars: document.getElementById('usage-bars'),
-  usageBody: document.getElementById('usage-body'),
   pullOpen: document.getElementById('pull-open'),
   pullBar: document.getElementById('pull-bar'),
   pullName: document.getElementById('pull-name'),
@@ -1006,7 +1000,7 @@ el.gameExit.addEventListener('click', () => setGameMode(false));
 // ---------- pestañas ----------
 
 const LS_TAB_KEY = 'ballast.tab';
-const VALID_TABS = ['modelos', 'consumo', 'almacenamiento', 'auto'];
+const VALID_TABS = ['modelos', 'almacenamiento', 'auto'];
 let activeTab = 'modelos';
 
 function setTab(name) {
@@ -1023,7 +1017,6 @@ function setTab(name) {
   localStorage.setItem(LS_TAB_KEY, name);
 
   // Al entrar en una pestaña se refresca su contenido.
-  if (name === 'consumo') refreshUsage();
   if (name === 'almacenamiento') refreshDisk();
   if (name === 'auto') refreshAuto();
   if (name === 'modelos') refreshPulls();
@@ -1199,11 +1192,6 @@ setInterval(() => {
   if (!document.hidden) refreshDisk();
 }, DISK_REFRESH_MS);
 
-refreshUsage();
-setInterval(() => {
-  if (!document.hidden) refreshUsage();
-}, USAGE_REFRESH_MS);
-
 refreshPulls();
 setInterval(() => {
   if (!document.hidden) refreshPulls();
@@ -1219,7 +1207,6 @@ document.addEventListener('visibilitychange', () => {
     refresh();
     refreshMemory();
     refreshDisk();
-    refreshUsage();
     refreshPulls();
     refreshAuto();
   }
