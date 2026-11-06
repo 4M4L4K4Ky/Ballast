@@ -40,176 +40,195 @@
       </div>
       <button id="game-exit">Salir del modo juego</button>
     </section>
-    <section class="cards">
-      <article class="card">
-        <p class="card-label">Modelos instalados</p>
-        <p class="card-value" id="stat-models">—</p>
-      </article>
-      <article class="card">
-        <p class="card-label">En VRAM</p>
-        <p class="card-value" id="stat-loaded">—</p>
-      </article>
-      <article class="card">
-        <p class="card-label">VRAM ocupada</p>
-        <p class="card-value" id="stat-vram">—</p>
-      </article>
-      <article class="card">
-        <p class="card-label">Total modelos</p>
-        <p class="card-value" id="stat-total">—</p>
-      </article>
-      <article class="card" id="card-tokens" hidden>
-        <p class="card-label">Tokens hoy</p>
-        <p class="card-value" id="stat-tokens">—</p>
-      </article>
-    </section>
 
-    <section class="vram-bar" id="vram-bar" hidden>
-      <div class="vram-info">
-        <span class="vram-dot"></span>
-        <div>
-          <strong id="vram-count">—</strong>
-          <p class="vram-detail" id="vram-detail"></p>
-        </div>
-      </div>
-      <button id="release-all" class="danger" title="Expulsa todos los modelos cargados para dejar la GPU libre">
-        Liberar toda la VRAM
-      </button>
-    </section>
+    <nav class="tabs" role="tablist" aria-label="Secciones">
+      <button class="tab" data-tab="resumen" role="tab">Resumen</button>
+      <button class="tab" data-tab="modelos" role="tab">Modelos</button>
+      <button class="tab" data-tab="consumo" role="tab">Consumo</button>
+      <button class="tab" data-tab="almacenamiento" role="tab">Almacenamiento</button>
+      <button class="tab" data-tab="auto" role="tab">Auto-expulsión</button>
+    </nav>
 
-    <section class="panel mem-panel" id="mem-panel" hidden>
-      <div class="panel-head">
-        <div class="panel-title">
-          <h2>Memoria de la GPU</h2>
-          <span class="hint" id="mem-hint">—</span>
-        </div>
-        <div class="mem-legend">
-          <span><i class="sw ollama"></i>Ollama</span>
-          <span><i class="sw other"></i>Otros</span>
-          <span><i class="sw gtt"></i>GTT</span>
-        </div>
-      </div>
-      <div class="mem-chart" id="mem-chart">
-        <svg id="mem-svg" aria-hidden="true"></svg>
-        <p class="mem-empty" id="mem-empty">Recopilando datos…</p>
-      </div>
-    </section>
+    <div class="tab-panel" data-tab="resumen">
+      <section class="cards">
+        <article class="card">
+          <p class="card-label">Modelos instalados</p>
+          <p class="card-value" id="stat-models">—</p>
+        </article>
+        <article class="card">
+          <p class="card-label">En VRAM</p>
+          <p class="card-value" id="stat-loaded">—</p>
+        </article>
+        <article class="card">
+          <p class="card-label">VRAM ocupada</p>
+          <p class="card-value" id="stat-vram">—</p>
+        </article>
+        <article class="card">
+          <p class="card-label">Total modelos</p>
+          <p class="card-value" id="stat-total">—</p>
+        </article>
+        <article class="card" id="card-tokens" hidden>
+          <p class="card-label">Tokens hoy</p>
+          <p class="card-value" id="stat-tokens">—</p>
+        </article>
+      </section>
 
-    <section class="panel">
-      <div class="panel-head">
-        <div class="panel-title">
-          <h2>Modelos</h2>
-          <span class="hint" id="models-hint">—</span>
-        </div>
-        <div class="models-tools">
-          <div class="search">
-            <svg viewBox="0 0 24 24" aria-hidden="true" width="15" height="15">
-              <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/>
-              <path d="M16.5 16.5 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            <input id="search" type="search" placeholder="Buscar modelo…  ( / )"
-                   autocomplete="off" spellcheck="false" aria-label="Buscar modelo">
+      <section class="vram-bar" id="vram-bar" hidden>
+        <div class="vram-info">
+          <span class="vram-dot"></span>
+          <div>
+            <strong id="vram-count">—</strong>
+            <p class="vram-detail" id="vram-detail"></p>
           </div>
-          <button id="pull-open" title="Descargar un modelo de la biblioteca de Ollama">Descargar</button>
         </div>
-      </div>
+        <button id="release-all" class="danger" title="Expulsa todos los modelos cargados para dejar la GPU libre">
+          Liberar toda la VRAM
+        </button>
+      </section>
 
-      <form class="pull-bar" id="pull-bar" hidden autocomplete="off">
-        <input id="pull-name" type="text" placeholder="qwen3:0.6b"
-               spellcheck="false" aria-label="Nombre del modelo a descargar">
-        <button type="submit" id="pull-start">Descargar</button>
-        <button type="button" class="ghost" id="pull-close" aria-label="Cerrar el formulario">Cancelar</button>
-        <span class="pull-help">nombre o nombre:tag · <a class="link"
-              href="https://ollama.com/library" target="_blank" rel="noreferrer">ver biblioteca</a></span>
-      </form>
-
-      <div class="pulls" id="pulls" hidden></div>
-
-      <div class="table-wrap">
-        <table id="models">
-          <thead>
-            <tr>
-              <th data-sort="name" class="sortable">Modelo</th>
-              <th data-sort="size" class="sortable">Tamaño</th>
-              <th>Quant</th>
-              <th data-sort="context" class="sortable">Contexto</th>
-              <th>Capacidades</th>
-              <th data-sort="state" class="sortable">Estado</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="models-body">
-            <tr><td colspan="7" class="empty">Cargando…</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="panel auto-panel" id="auto-panel" hidden>
-      <div class="panel-head">
-        <div class="panel-title">
-          <h2>Auto-expulsión</h2>
-          <span class="hint" id="auto-hint">—</span>
+      <section class="panel mem-panel" id="mem-panel" hidden>
+        <div class="panel-head">
+          <div class="panel-title">
+            <h2>Memoria de la GPU</h2>
+            <span class="hint" id="mem-hint">—</span>
+          </div>
+          <div class="mem-legend">
+            <span><i class="sw ollama"></i>Ollama</span>
+            <span><i class="sw other"></i>Otros</span>
+            <span><i class="sw gtt"></i>GTT</span>
+          </div>
         </div>
-        <button id="auto-pause">Pausar 1 hora</button>
-      </div>
-      <div class="auto-body">
-        <label class="auto-switch">
-          <input type="checkbox" id="auto-enabled">
-          <span>Activa</span>
-        </label>
-        <label class="auto-idle">
-          Expulsar tras
-          <input id="auto-minutes" type="number" min="5" max="240" step="5"
-                 inputmode="numeric" aria-label="Minutos sin uso antes de expulsar">
-          minutos sin uso
-        </label>
-        <p class="auto-note">
-          Nunca expulsa un modelo fijado, uno con peticiones en vuelo ni uno que
-          acabas de cargar. Solo ve el tráfico de este puerto (11435).
+        <div class="mem-chart" id="mem-chart">
+          <svg id="mem-svg" aria-hidden="true"></svg>
+          <p class="mem-empty" id="mem-empty">Recopilando datos…</p>
+        </div>
+      </section>
+    </div>
+
+    <div class="tab-panel" data-tab="modelos" hidden>
+      <section class="panel">
+        <div class="panel-head">
+          <div class="panel-title">
+            <h2>Modelos</h2>
+            <span class="hint" id="models-hint">—</span>
+          </div>
+          <div class="models-tools">
+            <div class="search">
+              <svg viewBox="0 0 24 24" aria-hidden="true" width="15" height="15">
+                <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/>
+                <path d="M16.5 16.5 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <input id="search" type="search" placeholder="Buscar modelo…  ( / )"
+                     autocomplete="off" spellcheck="false" aria-label="Buscar modelo">
+            </div>
+            <button id="pull-open" title="Descargar un modelo de la biblioteca de Ollama">Descargar</button>
+          </div>
+        </div>
+
+        <form class="pull-bar" id="pull-bar" hidden autocomplete="off">
+          <input id="pull-name" type="text" placeholder="qwen3:0.6b"
+                 spellcheck="false" aria-label="Nombre del modelo a descargar">
+          <button type="submit" id="pull-start">Descargar</button>
+          <button type="button" class="ghost" id="pull-close" aria-label="Cerrar el formulario">Cancelar</button>
+          <span class="pull-help">nombre o nombre:tag · <a class="link"
+                href="https://ollama.com/library" target="_blank" rel="noreferrer">ver biblioteca</a></span>
+        </form>
+
+        <div class="pulls" id="pulls" hidden></div>
+
+        <div class="table-wrap">
+          <table id="models">
+            <thead>
+              <tr>
+                <th data-sort="name" class="sortable">Modelo</th>
+                <th data-sort="size" class="sortable">Tamaño</th>
+                <th>Quant</th>
+                <th data-sort="context" class="sortable">Contexto</th>
+                <th>Capacidades</th>
+                <th data-sort="state" class="sortable">Estado</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="models-body">
+              <tr><td colspan="7" class="empty">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div class="tab-panel" data-tab="consumo" hidden>
+      <section class="panel usage-panel" id="usage-panel" hidden>
+        <div class="panel-head">
+          <div class="panel-title">
+            <h2>Consumo</h2>
+            <span class="hint" id="usage-hint">—</span>
+          </div>
+          <a class="link" href="/api/v1/usage/export.csv" download>Exportar CSV</a>
+        </div>
+        <div class="usage-bars" id="usage-bars"></div>
+        <div class="table-wrap">
+          <table class="usage-table">
+            <thead>
+              <tr>
+                <th>Modelo</th>
+                <th>Peticiones</th>
+                <th>Entrada</th>
+                <th>Salida</th>
+                <th>Total</th>
+                <th>Último uso</th>
+              </tr>
+            </thead>
+            <tbody id="usage-body"></tbody>
+          </table>
+        </div>
+        <p class="usage-note">
+          Solo se cuentan las peticiones enviadas a este puerto (11435), no las que
+          van directas a Ollama (11434).
         </p>
-      </div>
-      <div class="events" id="auto-events"></div>
-    </section>
+      </section>
+    </div>
 
-    <section class="panel usage-panel" id="usage-panel" hidden>
-      <div class="panel-head">
-        <div class="panel-title">
-          <h2>Consumo</h2>
-          <span class="hint" id="usage-hint">—</span>
+    <div class="tab-panel" data-tab="almacenamiento" hidden>
+      <section class="panel disk-panel" id="disk-panel" hidden>
+        <div class="panel-head">
+          <div class="panel-title">
+            <h2>Almacenamiento</h2>
+            <span class="hint" id="disk-hint">—</span>
+          </div>
         </div>
-        <a class="link" href="/api/v1/usage/export.csv" download>Exportar CSV</a>
-      </div>
-      <div class="usage-bars" id="usage-bars"></div>
-      <div class="table-wrap">
-        <table class="usage-table">
-          <thead>
-            <tr>
-              <th>Modelo</th>
-              <th>Peticiones</th>
-              <th>Entrada</th>
-              <th>Salida</th>
-              <th>Total</th>
-              <th>Último uso</th>
-            </tr>
-          </thead>
-          <tbody id="usage-body"></tbody>
-        </table>
-      </div>
-      <p class="usage-note">
-        Solo se cuentan las peticiones enviadas a este puerto (11435), no las que
-        van directas a Ollama (11434).
-      </p>
-    </section>
+        <div class="disk-list" id="disk-list"></div>
+      </section>
+    </div>
 
-    <section class="panel disk-panel" id="disk-panel" hidden>
-      <div class="panel-head">
-        <div class="panel-title">
-          <h2>Almacenamiento</h2>
-          <span class="hint" id="disk-hint">—</span>
+    <div class="tab-panel" data-tab="auto" hidden>
+      <section class="panel auto-panel" id="auto-panel" hidden>
+        <div class="panel-head">
+          <div class="panel-title">
+            <h2>Auto-expulsión</h2>
+            <span class="hint" id="auto-hint">—</span>
+          </div>
+          <button id="auto-pause">Pausar 1 hora</button>
         </div>
-      </div>
-      <div class="disk-list" id="disk-list"></div>
-    </section>
+        <div class="auto-body">
+          <label class="auto-switch">
+            <input type="checkbox" id="auto-enabled">
+            <span>Activa</span>
+          </label>
+          <label class="auto-idle">
+            Expulsar tras
+            <input id="auto-minutes" type="number" min="5" max="240" step="5"
+                   inputmode="numeric" aria-label="Minutos sin uso antes de expulsar">
+            minutos sin uso
+          </label>
+          <p class="auto-note">
+            Nunca expulsa un modelo fijado, uno con peticiones en vuelo ni uno que
+            acabas de cargar. Solo ve el tráfico de este puerto (11435).
+          </p>
+        </div>
+        <div class="events" id="auto-events"></div>
+      </section>
+    </div>
 
     <p class="footnote">
       Ballast no guarda prompts ni respuestas. Solo metadatos y contadores.

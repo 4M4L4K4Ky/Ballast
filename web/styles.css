@@ -149,6 +149,46 @@ main {
 .game-icon { font-size: 20px; line-height: 1; }
 .game-info strong { font-size: 14px; }
 
+/* ---------- pestañas ---------- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  padding: 4px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar { display: none; }
+
+.tab {
+  flex: 1 1 0;
+  min-width: 90px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tab:hover:not(.active) { color: var(--text); background: var(--panel-2); }
+
+.tab.active {
+  color: var(--text);
+  background: var(--panel-2);
+  border-color: var(--border);
+}
+
+.tab-panel[hidden] { display: none; }
+
 /* ---------- tarjetas ---------- */
 
 .cards {

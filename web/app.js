@@ -35,6 +35,8 @@ const el = {
   gameBar: document.getElementById('game-bar'),
   gameExit: document.getElementById('game-exit'),
   gameDetail: document.getElementById('game-detail'),
+  tabs: document.querySelectorAll('.tab'),
+  tabPanels: document.querySelectorAll('.tab-panel'),
   cardTokens: document.getElementById('card-tokens'),
   tokens: document.getElementById('stat-tokens'),
   usagePanel: document.getElementById('usage-panel'),
@@ -1001,6 +1003,38 @@ async function setGameMode(enabled) {
 el.gameToggle.addEventListener('click', () => setGameMode(!gameMode));
 el.gameExit.addEventListener('click', () => setGameMode(false));
 
+// ---------- pestañas ----------
+
+const LS_TAB_KEY = 'ballast.tab';
+const VALID_TABS = ['resumen', 'modelos', 'consumo', 'almacenamiento', 'auto'];
+let activeTab = 'resumen';
+
+function setTab(name) {
+  if (!VALID_TABS.includes(name)) name = 'resumen';
+  el.tabs.forEach((btn) => {
+    const active = btn.dataset.tab === name;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  el.tabPanels.forEach((panel) => {
+    panel.hidden = panel.dataset.tab !== name;
+  });
+  activeTab = name;
+  localStorage.setItem(LS_TAB_KEY, name);
+
+  // Al entrar en una pestaña se refresca su contenido, así las gráficas se
+  // redibujan con el ancho real del contenedor (que estaba oculto).
+  if (name === 'resumen') refreshMemory();
+  if (name === 'consumo') refreshUsage();
+  if (name === 'almacenamiento') refreshDisk();
+  if (name === 'auto') refreshAuto();
+  if (name === 'modelos') refreshPulls();
+}
+
+el.tabs.forEach((btn) => {
+  btn.addEventListener('click', () => setTab(btn.dataset.tab));
+});
+
 // ---------- memoria de la GPU en tiempo real ----------
 
 const MEM_POLL_MS = 2000;
@@ -1153,9 +1187,12 @@ window.addEventListener('resize', () => {
 refresh();
 setInterval(refresh, REFRESH_MS);
 
+const initialTab = localStorage.getItem(LS_TAB_KEY) || 'resumen';
+setTab(initialTab);
+
 refreshMemory();
 setInterval(() => {
-  if (!document.hidden) refreshMemory();
+  if (!document.hidden && activeTab === 'resumen') refreshMemory();
 }, MEM_POLL_MS);
 
 refreshDisk();
