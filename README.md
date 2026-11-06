@@ -35,12 +35,18 @@ go build -o ballast ./cmd/ballast
   limpia a mitad.
 - **Consumo**: proxy en `:11435` que cuenta tokens de entrada y salida por
   modelo, gráfica de 14 días y exportación a CSV.
+- **Interfaz por pestañas**: Resumen siempre visible; Modelos, Consumo,
+  Almacenamiento y Auto-expulsión en pestañas. Tema oscuro/claro automático.
 
 ## Capturas
 
-| Resumen | Modelos | Almacenamiento |
+| Resumen | Modelos |
+|---|---|
+| ![Resumen](assets/screenshot-resumen.png) | ![Modelos](assets/screenshot-modelos.png) |
+
+| Consumo | Almacenamiento | Auto-expulsión |
 |---|---|---|
-| ![Resumen](assets/screenshot-resumen.png) | ![Modelos](assets/screenshot-modelos.png) | ![Almacenamiento](assets/screenshot-almacenamiento.png) |
+| ![Consumo](assets/screenshot-consumo.png) | ![Almacenamiento](assets/screenshot-almacenamiento.png) | ![Auto-expulsión](assets/screenshot-auto.png) |
 
 ## El puerto importa
 
@@ -56,12 +62,16 @@ Si van directos a `11434`, funcionan igual pero Ballast no los cuenta.
 
 ## Estado
 
-Versión temprana pero usable a diario. Pendiente (ver [PLAN.md](PLAN.md)):
+Versión publicada (`v0.1.2`): fases 1–4 funcionan a diario.
 
-| Fase | Contenido |
-|---|---|
-| F5 | Releases multiplataforma, `install.sh`, Docker |
-| F6 | Catálogo y búsqueda online (aplazado) |
+| Fase | Contenido | Estado |
+|---|---|---|
+| F1 | Métricas del sistema (VRAM real, discos) | Hecho |
+| F2 | Persistencia y descargas con progreso | Hecho |
+| F3 | Proxy y contador de tokens | Hecho |
+| F4 | Auto-expulsión segura | Hecho |
+| F5 | Releases multiplataforma, `install.sh`, Docker | En curso |
+| F6 | Catálogo y búsqueda online | Aplazado |
 
 ## Instalación
 
