@@ -54,7 +54,7 @@ cambiar nada; si tus clientes van directos a `11434`, funcionan igual.
 
 ## Estado
 
-Versión publicada (`v0.1.2`): fases 1–4 funcionan a diario.
+Versión publicada (`v0.1.4`): fases 1–4 funcionan a diario.
 
 | Fase | Contenido | Estado |
 |---|---|---|
@@ -85,8 +85,8 @@ ballast [flags]
 
 Variables de entorno equivalentes: `BALLAST_LISTEN`, `BALLAST_OLLAMA_URL`.
 
-Datos en `~/.local/share/ballast/` (o `BALLAST_DATA_DIR`): `ballast.db` con el
-histórico de consumo y `state.json` con el modo juego.
+Datos en `~/.local/share/ballast/` (o `BALLAST_DATA_DIR`): `ballast.db` con los
+modelos fijados y la auditoría, y `state.json` con el modo juego.
 
 ## Cómo está hecho
 
