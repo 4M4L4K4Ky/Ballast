@@ -526,8 +526,9 @@ Reglas de implementación:
 
 ### 8.8 Memoria de la GPU en tiempo real
 
-La tarjeta "VRAM ocupada" solo sabe lo que Ollama declara. Esta gráfica mide la
-GPU de verdad.
+La tarjeta «En VRAM» solo sabe lo que Ollama declara (y ahora lo muestra como
+subtítulo, junto al número de modelos cargados). Esta gráfica mide la GPU de
+verdad.
 
 - **Fuente**: sysfs (`/sys/class/drm/card*/device/mem_info_vram_*`), eligiendo la
   tarjeta con más VRAM. Sin `radeontop` ni dependencias.
