@@ -31,16 +31,20 @@ go build -o ballast ./cmd/ballast
   desactives.
 - **Almacenamiento**: espacio total, usado y libre de cada disco, con el de los
   modelos marcado y aviso si queda poco.
+- **Consumo**: tokens de hoy, barras de los últimos 14 días y tabla por modelo,
+  con exportación a CSV.
 - **Descargas**: botón Descargar con barra de progreso agregada y cancelación
   limpia a mitad.
-- **Interfaz por pestañas**: Resumen siempre visible; Modelos, Almacenamiento y
-  Auto-expulsión en pestañas. Tema oscuro/claro automático.
+- **Cinco pestañas**: Resumen, Modelos, Consumo, Almacenamiento y
+  Auto-expulsión, cada una enlazable (`/#consumo`). Tema oscuro/claro automático.
 
 ## Capturas
 
-| Resumen | Modelos |
+![Resumen](assets/screenshot-resumen.png)
+
+| Modelos | Consumo |
 |---|---|
-| ![Resumen](assets/screenshot-resumen.png) | ![Modelos](assets/screenshot-modelos.png) |
+| ![Modelos](assets/screenshot-modelos.png) | ![Consumo](assets/screenshot-consumo.png) |
 
 | Almacenamiento | Auto-expulsión |
 |---|---|

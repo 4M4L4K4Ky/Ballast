@@ -14,13 +14,13 @@
         <circle cx="16" cy="16" r="15" fill="none" stroke="currentColor" stroke-width="2"/>
         <path d="M16 6v20M6 16h20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
       </svg>
-      <div>
+      <div class="brand-text">
         <h1>Ballast</h1>
         <p class="tagline">Control de modelos locales</p>
       </div>
     </div>
     <div class="topbar-actions">
-      <div class="status" id="status">
+      <div class="status" id="status" role="status" aria-live="polite">
         <span class="dot" id="status-dot"></span>
         <span id="status-text">Conectando con Ollama…</span>
       </div>
@@ -41,70 +41,86 @@
       <button id="game-exit">Salir del modo juego</button>
     </section>
 
-    <!-- Resumen: siempre visible -->
-    <section class="cards">
-      <article class="card">
-        <p class="card-label">Modelos instalados</p>
-        <p class="card-value" id="stat-models">—</p>
-      </article>
-      <article class="card">
-        <p class="card-label">En VRAM</p>
-        <p class="card-value" id="stat-loaded">—</p>
-      </article>
-      <article class="card">
-        <p class="card-label">VRAM ocupada</p>
-        <p class="card-value" id="stat-vram">—</p>
-      </article>
-      <article class="card">
-        <p class="card-label">Total modelos</p>
-        <p class="card-value" id="stat-total">—</p>
-      </article>
-    </section>
+    <div class="tabs-wrap" id="tabs-wrap">
+      <nav class="tabs" role="tablist" aria-label="Secciones">
+        <button class="tab" id="tab-resumen" data-tab="resumen" role="tab"
+                aria-controls="panel-resumen" aria-selected="true" tabindex="0">Resumen</button>
+        <button class="tab" id="tab-modelos" data-tab="modelos" role="tab"
+                aria-controls="panel-modelos" aria-selected="false" tabindex="-1">Modelos</button>
+        <button class="tab" id="tab-consumo" data-tab="consumo" role="tab"
+                aria-controls="panel-consumo" aria-selected="false" tabindex="-1">Consumo</button>
+        <button class="tab" id="tab-almacenamiento" data-tab="almacenamiento" role="tab"
+                aria-controls="panel-almacenamiento" aria-selected="false" tabindex="-1">Almacenamiento</button>
+        <button class="tab" id="tab-auto" data-tab="auto" role="tab"
+                aria-controls="panel-auto" aria-selected="false" tabindex="-1">Auto-expulsión</button>
+      </nav>
+    </div>
 
-    <section class="vram-bar" id="vram-bar" hidden>
-      <div class="vram-info">
-        <span class="vram-dot"></span>
-        <div>
-          <strong id="vram-count">—</strong>
-          <p class="vram-detail" id="vram-detail"></p>
+    <div class="tab-panel" id="panel-resumen" data-tab="resumen" role="tabpanel" aria-labelledby="tab-resumen">
+      <section class="cards">
+        <article class="card">
+          <p class="card-label">Modelos instalados</p>
+          <p class="card-value" id="stat-models">—</p>
+        </article>
+        <article class="card">
+          <p class="card-label">En VRAM</p>
+          <p class="card-value" id="stat-loaded">—</p>
+          <p class="card-sub" id="stat-vram">—</p>
+        </article>
+        <article class="card">
+          <p class="card-label">Tamaño total</p>
+          <p class="card-value" id="stat-total">—</p>
+        </article>
+        <article class="card" id="card-tokens" hidden>
+          <p class="card-label">Tokens hoy</p>
+          <p class="card-value" id="stat-tokens">—</p>
+        </article>
+      </section>
+
+      <section class="vram-bar" id="vram-bar" hidden>
+        <div class="vram-info">
+          <span class="vram-dot"></span>
+          <div>
+            <strong id="vram-count">—</strong>
+            <p class="vram-detail" id="vram-detail"></p>
+          </div>
         </div>
-      </div>
-      <button id="release-all" class="danger" title="Expulsa todos los modelos cargados para dejar la GPU libre">
-        Liberar toda la VRAM
-      </button>
-    </section>
+        <button id="release-all" class="danger" title="Expulsa todos los modelos cargados para dejar la GPU libre">
+          Liberar toda la VRAM
+        </button>
+      </section>
 
-    <section class="panel mem-panel" id="mem-panel" hidden>
-      <div class="panel-head">
-        <div class="panel-title">
-          <h2>Memoria de la GPU</h2>
-          <span class="hint" id="mem-hint">—</span>
+      <section class="panel mem-panel" id="mem-panel" hidden>
+        <div class="panel-head">
+          <div class="panel-title">
+            <h2>Memoria de la GPU</h2>
+            <span class="hint" id="mem-hint">—</span>
+          </div>
+          <div class="mem-legend">
+            <span><i class="sw ollama"></i>Ollama</span>
+            <span><i class="sw other"></i>Otros</span>
+            <span title="Memoria del sistema que la GPU puede usar cuando se queda sin VRAM">
+              <i class="sw gtt"></i>GTT
+            </span>
+          </div>
         </div>
-        <div class="mem-legend">
-          <span><i class="sw ollama"></i>Ollama</span>
-          <span><i class="sw other"></i>Otros</span>
-          <span><i class="sw gtt"></i>GTT</span>
+        <div class="mem-chart" id="mem-chart">
+          <svg id="mem-svg" aria-hidden="true"></svg>
+          <p class="mem-empty" id="mem-empty">Recopilando datos…</p>
         </div>
-      </div>
-      <div class="mem-chart" id="mem-chart">
-        <svg id="mem-svg" aria-hidden="true"></svg>
-        <p class="mem-empty" id="mem-empty">Recopilando datos…</p>
-      </div>
-    </section>
+        <p class="mem-note">
+          GTT es memoria del sistema que la GPU puede usar cuando se queda sin VRAM.
+          La línea amarilla marca la reservada.
+        </p>
+      </section>
+    </div>
 
-    <!-- Pestañas: solo las secciones siguientes -->
-    <nav class="tabs" role="tablist" aria-label="Secciones">
-      <button class="tab" data-tab="modelos" role="tab">Modelos</button>
-      <button class="tab" data-tab="almacenamiento" role="tab">Almacenamiento</button>
-      <button class="tab" data-tab="auto" role="tab">Auto-expulsión</button>
-    </nav>
-
-    <div class="tab-panel" data-tab="modelos">
+    <div class="tab-panel" id="panel-modelos" data-tab="modelos" role="tabpanel" aria-labelledby="tab-modelos" hidden>
       <section class="panel">
         <div class="panel-head">
           <div class="panel-title">
             <h2>Modelos</h2>
-            <span class="hint" id="models-hint">—</span>
+            <span class="hint" id="models-hint" aria-live="polite">—</span>
           </div>
           <div class="models-tools">
             <div class="search">
@@ -151,10 +167,43 @@
       </section>
     </div>
 
+    <div class="tab-panel" id="panel-consumo" data-tab="consumo" role="tabpanel" aria-labelledby="tab-consumo" hidden>
+      <section class="panel usage-panel" id="usage-panel">
+        <div class="panel-head">
+          <div class="panel-title">
+            <h2>Consumo de tokens</h2>
+            <span class="hint" id="usage-hint">—</span>
+          </div>
+          <a class="link" href="/api/v1/usage/export.csv" download>Exportar CSV</a>
+        </div>
+        <div class="usage-bars" id="usage-bars" aria-label="Tokens por día, últimos 14 días"></div>
+        <div class="table-wrap">
+          <table class="usage-table">
+            <thead>
+              <tr>
+                <th>Modelo</th>
+                <th>Peticiones</th>
+                <th>Entrada</th>
+                <th>Salida</th>
+                <th>Total</th>
+                <th>Última vez</th>
+              </tr>
+            </thead>
+            <tbody id="usage-body">
+              <tr><td colspan="6" class="empty">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="usage-note">
+          Solo se cuentan las peticiones que pasan por el puerto de Ballast (11435).
+          Las que van directas a Ollama no se ven.
+        </p>
+      </section>
     </div>
 
-    <div class="tab-panel" data-tab="almacenamiento" hidden>
-      <section class="panel disk-panel" id="disk-panel" hidden>
+    <div class="tab-panel" id="panel-almacenamiento" data-tab="almacenamiento" role="tabpanel"
+         aria-labelledby="tab-almacenamiento" hidden>
+      <section class="panel disk-panel" id="disk-panel">
         <div class="panel-head">
           <div class="panel-title">
             <h2>Almacenamiento</h2>
@@ -165,8 +214,8 @@
       </section>
     </div>
 
-    <div class="tab-panel" data-tab="auto" hidden>
-      <section class="panel auto-panel" id="auto-panel" hidden>
+    <div class="tab-panel" id="panel-auto" data-tab="auto" role="tabpanel" aria-labelledby="tab-auto" hidden>
+      <section class="panel auto-panel" id="auto-panel">
         <div class="panel-head">
           <div class="panel-title">
             <h2>Auto-expulsión</h2>
@@ -211,6 +260,17 @@
     <div class="drawer-body" id="drawer-body"></div>
     <footer class="drawer-actions" id="drawer-actions"></footer>
   </aside>
+
+  <dialog class="confirm" id="confirm-dialog" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <h2 id="confirm-title">—</h2>
+      <p id="confirm-text"></p>
+      <div class="confirm-actions">
+        <button value="cancel" class="ghost">Cancelar</button>
+        <button value="ok" id="confirm-ok">Aceptar</button>
+      </div>
+    </form>
+  </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="/app.js"></script>

@@ -378,17 +378,22 @@ claro opcional.
 
 ### 8.1 Resumen (pantalla inicial)
 
-- 5 tarjetas: modelos instalados · modelos en VRAM · VRAM usada · **total de los
-  modelos en disco** · **tokens de hoy**. La tarjeta de tamaño es la suma de los
-  modelos, no el disco del sistema: el disco va aparte, en el panel de
-  Almacenamiento (§8.7). La de tokens solo aparece si la base de datos funciona.
+La interfaz se divide en cinco pestañas enlazables por hash (`#resumen`,
+`#modelos`, `#consumo`, `#almacenamiento`, `#auto`), que se recorren con las
+flechas del teclado. «Resumen» es la pestaña inicial.
+
+- 4 tarjetas: modelos instalados · modelos en VRAM (con los GB que ocupan) ·
+  **tamaño total de los modelos en disco** · **tokens de hoy**. La tarjeta de
+  tamaño es la suma de los modelos, no el disco del sistema: el disco va aparte,
+  en el panel de Almacenamiento (§8.7). La de tokens solo aparece si la base de
+  datos funciona.
 - Barra de modelos cargados: tamaño en VRAM, tiempo restante de `keep_alive`,
   candado si está fijado, botón **Expulsar** y botón destacado **Liberar toda la
   VRAM** para dejar la GPU libre al terminar de trabajar. La barra solo aparece
   si hay algo cargado.
 - Gráfica de memoria de la GPU en tiempo real (§8.8).
-- Panel de consumo: barras de tokens por día (14 días) y tabla por modelo.
-- Últimos 10 eventos, incluidos los `auto-unload` con su motivo (pendiente).
+- El panel de consumo (barras de 14 días y tabla por modelo) tiene pestaña
+  propia; los últimos eventos viven en la pestaña de Auto-expulsión.
 
 ### 8.2 Modelos
 
@@ -436,7 +441,7 @@ de espacio libre antes de empezar.
 
 Implementado (v0.1):
 
-- Panel **Consumo** bajo la tabla de modelos.
+- Pestaña **Consumo**: tarjeta de tokens de hoy, barras de 14 días y tabla por modelo.
 - Barras de los últimos 14 días (entrada + salida por día).
 - Tabla por modelo: peticiones, tokens de entrada, de salida, total y último uso.
 - `GET /api/v1/usage/export.csv` descarga todo el histórico.
@@ -455,9 +460,12 @@ clientes.
 ### 8.6 Detalles de UX
 
 - Todo se actualiza por SSE; sin botón de refrescar.
-- Destructivas con confirmación escribiendo el nombre.
-- Atajos: `/` enfoca la descarga, `Esc` cierra paneles.
-- Responsive hasta 380 px; en móvil la tabla pasa a tarjetas.
+- Las acciones destructivas (expulsar, liberar la VRAM, modo juego) piden
+  confirmación en un diálogo propio, nunca con `window.confirm`.
+- Atajos: `/` enfoca el buscador, `Esc` cierra la ficha y los paneles, las
+  flechas recorren las pestañas.
+- Responsive hasta 380 px: en móvil la tabla oculta tamaño, quant, contexto y
+  capacidades, recorta el nombre y deja fija la columna de acción.
 - Estados vacíos con acción sugerida, nunca una pantalla en blanco.
 
 ### 8.7 Almacenamiento

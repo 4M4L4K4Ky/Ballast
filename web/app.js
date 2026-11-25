@@ -24,6 +24,19 @@ const el = {
   loaded: document.getElementById('stat-loaded'),
   vram: document.getElementById('stat-vram'),
   total: document.getElementById('stat-total'),
+  cardTokens: document.getElementById('card-tokens'),
+  statTokens: document.getElementById('stat-tokens'),
+  usagePanel: document.getElementById('usage-panel'),
+  usageHint: document.getElementById('usage-hint'),
+  usageBars: document.getElementById('usage-bars'),
+  usageBody: document.getElementById('usage-body'),
+  tabsWrap: document.getElementById('tabs-wrap'),
+  confirm: document.getElementById('confirm-dialog'),
+  confirmTitle: document.getElementById('confirm-title'),
+  confirmText: document.getElementById('confirm-text'),
+  confirmOk: document.getElementById('confirm-ok'),
+  main: document.querySelector('main'),
+  header: document.querySelector('header.topbar'),
   body: document.getElementById('models-body'),
   hint: document.getElementById('models-hint'),
   search: document.getElementById('search'),
@@ -68,6 +81,13 @@ const el = {
 };
 
 // ---------- utilidades ----------
+
+const LOCK_ICON = '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">'
+  + '<rect x="4" y="10" width="16" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>'
+  + '<path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
+const UNLOCK_ICON = '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">'
+  + '<rect x="4" y="10" width="16" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>'
+  + '<path d="M8 10V7a4 4 0 0 1 7.4-2" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
 
 function bytes(n) {
   if (!n) return '—';
@@ -129,11 +149,37 @@ function remaining(iso) {
 }
 
 let toastTimer;
-function toast(msg, kind = '') {
-  el.toast.textContent = msg;
+function toast(msg, kind = '', action = null) {
   el.toast.className = `toast show ${kind}`;
+  el.toast.innerHTML = `<span class="toast-msg">${esc(msg)}</span>`
+    + (action ? '<button type="button" class="toast-action">Reintentar</button>' : '');
+  if (action) {
+    el.toast.querySelector('.toast-action').addEventListener('click', () => {
+      el.toast.className = 'toast';
+      action.run();
+    });
+  }
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.toast.className = 'toast'; }, 3500);
+  toastTimer = setTimeout(() => { el.toast.className = 'toast'; }, action ? 8000 : 3500);
+}
+
+// Diálogo de confirmación propio, en lugar de window.confirm().
+function ask({ title, text, ok = 'Aceptar', danger = false }) {
+  if (el.confirm.open) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    el.confirmTitle.textContent = title;
+    el.confirmText.textContent = text;
+    el.confirmOk.textContent = ok;
+    el.confirmOk.className = danger ? 'danger' : '';
+    el.confirm.returnValue = 'cancel';
+    const done = () => {
+      el.confirm.removeEventListener('close', done);
+      resolve(el.confirm.returnValue === 'ok');
+    };
+    el.confirm.addEventListener('close', done);
+    el.confirm.showModal();
+    el.confirmOk.focus();
+  });
 }
 
 async function api(path, options = {}) {
@@ -176,7 +222,9 @@ async function refresh() {
     const status = await api('/api/v1/status');
     if (status.reachable) {
       el.statusDot.className = 'dot ok';
-      el.statusText.textContent = `Ollama ${status.ollama_version} · v${status.version}`;
+      const v = String(status.version || '');
+      const version = v.startsWith('v') ? v : `v${v}`;
+      el.statusText.textContent = `Ollama ${status.ollama_version} · ${version}`;
     } else {
       el.statusDot.className = 'dot err';
       el.statusText.textContent = 'Ollama no responde';
@@ -233,7 +281,7 @@ function render(models) {
 
   el.models.textContent = models.length;
   el.loaded.textContent = loaded.length;
-  el.vram.textContent = vram ? bytes(vram) : '0 B';
+  el.vram.textContent = loaded.length ? `${vram ? bytes(vram) : '0 B'} de VRAM` : 'GPU libre';
   el.total.textContent = bytes(totalSize);
 
   el.hint.textContent = ui.q
@@ -262,8 +310,8 @@ function render(models) {
   el.body.innerHTML = shown.map((m) => {
     const caps = (m.capabilities || []).map((c) => `<span>${esc(c)}</span>`).join('');
     const state = m.loaded
-      ? `<span class="badge loaded">En VRAM · ${bytes(m.size_vram)}</span>`
-      : '<span class="badge idle">Descargado</span>';
+      ? `<span class="badge loaded">En VRAM<span class="badge-size"> · ${bytes(m.size_vram)}</span></span>`
+      : '<span class="badge idle">En disco</span>';
     const action = m.loaded
       ? `<button class="danger" data-unload="${esc(m.name)}">Expulsar</button>`
       : gameMode
@@ -272,14 +320,16 @@ function render(models) {
     return `
       <tr class="row" data-name="${esc(m.name)}" tabindex="0">
         <td class="model-name">
-          <span>${esc(m.name)}</span>
-          <button class="copy" data-copy="${esc(m.name)}" title="Copiar nombre"
-                  aria-label="Copiar nombre de ${esc(m.name)}">⧉</button>
-          <button class="pin${m.pinned ? ' pinned' : ''}" data-pin="${esc(m.name)}"
-                  data-pinned="${m.pinned ? '1' : '0'}" aria-pressed="${Boolean(m.pinned)}"
-                  title="${m.pinned ? 'Quitar la protección' : 'Proteger de la auto-expulsión'}"
-                  aria-label="${m.pinned ? 'Quitar la protección de' : 'Proteger de la auto-expulsión'} ${esc(m.name)}"
-          >${m.pinned ? '🔒' : '🔓'}</button>
+          <div class="name-cell">
+            <span class="name-text">${esc(m.name)}</span>
+            <button class="copy" data-copy="${esc(m.name)}" title="Copiar nombre"
+                    aria-label="Copiar nombre de ${esc(m.name)}">⧉</button>
+            <button class="pin${m.pinned ? ' pinned' : ''}" data-pin="${esc(m.name)}"
+                    data-pinned="${m.pinned ? '1' : '0'}" aria-pressed="${Boolean(m.pinned)}"
+                    title="${m.pinned ? 'Quitar la protección' : 'Proteger de la auto-expulsión'}"
+                    aria-label="${m.pinned ? 'Quitar la protección de' : 'Proteger de la auto-expulsión'} ${esc(m.name)}"
+            >${m.pinned ? LOCK_ICON : UNLOCK_ICON}</button>
+          </div>
         </td>
         <td class="dim">${bytes(m.size)}</td>
         <td class="dim">${esc(m.details?.quantization_level || '—')}</td>
@@ -343,7 +393,7 @@ function renderDetail() {
 
   el.drawerState.innerHTML = m.loaded
     ? `<span class="badge loaded">En VRAM · ${bytes(m.size_vram)}</span>`
-    : '<span class="badge idle">Descargado</span>';
+    : '<span class="badge idle">En disco</span>';
   el.drawerTitle.textContent = m.name;
 
   let html = `<dl class="detail-grid">${detailRows(m)}</dl>`;
@@ -373,6 +423,7 @@ async function openDetailFor(name) {
   el.drawer.hidden = false;
   el.overlay.hidden = false;
   document.body.classList.add('drawer-open');
+  setBackgroundInert(true);
   el.drawerTitle.textContent = name;
   el.drawerState.textContent = '—';
   el.drawerBody.innerHTML = '<p class="empty">Cargando ficha…</p>';
@@ -395,8 +446,32 @@ function closeDrawer() {
   el.drawer.hidden = true;
   el.overlay.hidden = true;
   document.body.classList.remove('drawer-open');
+  setBackgroundInert(false);
   if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
 }
+
+// Mientras la ficha está abierta, el resto de la página queda inerte.
+function setBackgroundInert(on) {
+  el.main.inert = on;
+  el.header.inert = on;
+}
+
+// La ficha se anuncia como modal: el tabulador no debe escapar de ella.
+el.drawer.addEventListener('keydown', (event) => {
+  if (event.key !== 'Tab') return;
+  const focusables = [...el.drawer.querySelectorAll('button:not(:disabled), a[href], input, select, textarea')]
+    .filter((node) => node.offsetParent !== null);
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
 
 // Refresca solo el estado de la ficha abierta, sin volver a pedir /api/show.
 function syncDrawer() {
@@ -433,15 +508,23 @@ async function loadModel(name, btn) {
     toast(`${name} cargado en VRAM (10 min)`, 'ok');
     await refresh();
   } catch (err) {
-    toast(err.message, 'err');
     if (btn) {
       btn.disabled = false;
       btn.textContent = 'Cargar';
     }
+    toast(err.message, 'err', { run: () => loadModel(name) });
   }
 }
 
 async function unloadModel(name, btn) {
+  const ok = await ask({
+    title: 'Expulsar de la VRAM',
+    text: `${name} dejará de ocupar la GPU. Puedes volver a cargarlo cuando quieras.`,
+    ok: 'Expulsar',
+    danger: true,
+  });
+  if (!ok) return;
+
   if (btn) {
     btn.disabled = true;
     btn.textContent = 'Expulsando…';
@@ -451,11 +534,11 @@ async function unloadModel(name, btn) {
     toast(`${name} expulsado de VRAM`, 'ok');
     await refresh();
   } catch (err) {
-    toast(err.message, 'err');
     if (btn) {
       btn.disabled = false;
       btn.textContent = 'Expulsar';
     }
+    toast(err.message, 'err', { run: () => unloadModel(name) });
   }
 }
 
@@ -491,9 +574,11 @@ document.addEventListener('click', async (event) => {
   if (row) openDetailFor(row.dataset.name);
 });
 
-// Teclado: Enter sobre una fila abre la ficha.
+// Teclado: Enter sobre una fila abre la ficha, salvo si el foco está en un
+// control de la propia fila (Cargar, Expulsar, copiar, fijar).
 el.body.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter' && event.key !== ' ') return;
+  if (event.target.closest('button, a, input, select, textarea')) return;
   const row = event.target.closest('tr.row');
   if (!row) return;
   event.preventDefault();
@@ -504,8 +589,9 @@ el.drawerClose.addEventListener('click', closeDrawer);
 el.overlay.addEventListener('click', closeDrawer);
 
 document.addEventListener('keydown', (event) => {
+  if (el.confirm.open) return;
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '');
-  if (event.key === '/' && !typing) {
+  if (event.key === '/' && !typing && el.drawer.hidden) {
     event.preventDefault();
     el.search.focus();
     return;
@@ -542,7 +628,13 @@ document.querySelectorAll('th[data-sort]').forEach((th) => {
 // ---------- VRAM ----------
 
 el.releaseAll.addEventListener('click', async () => {
-  if (!confirm('¿Expulsar todos los modelos de la VRAM? Se liberará la GPU para jugar.')) return;
+  const ok = await ask({
+    title: 'Liberar la VRAM',
+    text: 'Se expulsarán todos los modelos cargados. Puedes volver a cargarlos cuando quieras.',
+    ok: 'Liberar',
+    danger: true,
+  });
+  if (!ok) return;
   el.releaseAll.disabled = true;
   el.releaseAll.textContent = 'Liberando…';
   try {
@@ -570,20 +662,25 @@ async function refreshUsage() {
     ]);
     renderUsage(summary, series);
   } catch {
-    el.usagePanel.hidden = true;
+    // Sin base de datos no hay contadores: se explica en la pestaña.
     el.cardTokens.hidden = true;
+    el.usageHint.textContent = 'No disponible';
+    el.usageBars.innerHTML = '';
+    el.usageBody.innerHTML = '<tr><td colspan="6" class="empty">'
+      + 'La base de datos de consumo no está disponible.</td></tr>';
   }
 }
 
 function renderUsage(summary, series) {
-  el.usagePanel.hidden = false;
   el.cardTokens.hidden = false;
 
   const today = (summary.today?.prompt_tokens || 0) + (summary.today?.completion_tokens || 0);
   const total = (summary.total?.prompt_tokens || 0) + (summary.total?.completion_tokens || 0);
-  el.tokens.textContent = tokens(today);
-  el.usageHint.textContent =
-    `${summary.total?.requests || 0} peticiones · ${tokens(total)} tokens en total`;
+  const requests = summary.total?.requests || 0;
+  el.statTokens.textContent = tokens(today);
+  el.usageHint.textContent = requests
+    ? `${requests.toLocaleString('es-ES')} peticiones · ${tokens(total)} tokens en total`
+    : 'Aún no hay peticiones contadas';
 
   const days = series?.series || [];
   const max = Math.max(1, ...days.map((d) => (d.prompt_tokens || 0) + (d.completion_tokens || 0)));
@@ -620,14 +717,16 @@ async function refreshDisk() {
   try {
     renderDisk(await api('/api/v1/disk'));
   } catch {
-    el.diskPanel.hidden = true;
+    el.diskHint.textContent = 'No disponible';
+    el.diskList.innerHTML = '<p class="empty">No se pudo leer el almacenamiento.</p>';
   }
 }
 
 function renderDisk(report) {
   const filesystems = report?.filesystems || [];
   if (!filesystems.length) {
-    el.diskPanel.hidden = true;
+    el.diskHint.textContent = 'Sin datos';
+    el.diskList.innerHTML = '<p class="empty">No se encontraron discos que mostrar.</p>';
     return;
   }
   el.diskPanel.hidden = false;
@@ -647,7 +746,9 @@ function renderDisk(report) {
     const total = f.total_bytes || 1;
     const pct = Math.min(100, Math.max(0, f.used_percent || 0));
     const low = f.free_bytes / total < 0.1;
-    const badge = f.contains_models ? '<span class="badge loaded">modelos</span>' : '';
+    const badge = f.contains_models
+      ? '<span class="badge loaded" title="Aquí guarda Ollama los modelos">modelos de Ollama</span>'
+      : '';
     const device = [f.device, f.fstype].filter(Boolean).join(' · ');
     return `
       <div class="disk-row${low ? ' low' : ''}">
@@ -677,7 +778,8 @@ async function refreshAuto() {
     ]);
     renderAuto(cfg, events.events || []);
   } catch {
-    el.autoPanel.hidden = true;
+    el.autoHint.textContent = 'No disponible';
+    el.autoEvents.innerHTML = '<p class="empty">No se pudo leer la configuración de auto-expulsión.</p>';
   }
 }
 
@@ -971,8 +1073,13 @@ function setGameModeUI(enabled, since) {
 }
 
 async function setGameMode(enabled) {
-  if (enabled && !confirm('¿Activar el modo juego? Se expulsarán todos los modelos de la VRAM.')) {
-    return;
+  if (enabled) {
+    const ok = await ask({
+      title: 'Activar el modo juego',
+      text: 'Se expulsarán todos los modelos de la VRAM y Ballast no cargará ninguno hasta que lo desactives.',
+      ok: 'Activar',
+    });
+    if (!ok) return;
   }
   el.gameToggle.disabled = true;
   try {
@@ -1000,8 +1107,15 @@ el.gameExit.addEventListener('click', () => setGameMode(false));
 // ---------- pestañas ----------
 
 const LS_TAB_KEY = 'ballast.tab';
-const VALID_TABS = ['modelos', 'almacenamiento', 'auto'];
-let activeTab = 'modelos';
+const VALID_TABS = ['resumen', 'modelos', 'consumo', 'almacenamiento', 'auto'];
+const tabsNav = document.querySelector('.tabs');
+let activeTab = 'resumen';
+
+// Enlace directo a una pestaña: /#modelos
+function tabFromHash() {
+  const name = location.hash.slice(1);
+  return VALID_TABS.includes(name) ? name : null;
+}
 
 function setTab(name) {
   if (!VALID_TABS.includes(name)) name = 'resumen';
@@ -1009,22 +1123,55 @@ function setTab(name) {
     const active = btn.dataset.tab === name;
     btn.classList.toggle('active', active);
     btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    btn.tabIndex = active ? 0 : -1;
   });
   el.tabPanels.forEach((panel) => {
     panel.hidden = panel.dataset.tab !== name;
   });
   activeTab = name;
   localStorage.setItem(LS_TAB_KEY, name);
+  if (location.hash.slice(1) !== name) {
+    history.replaceState(null, '', `#${name}`);
+  }
 
   // Al entrar en una pestaña se refresca su contenido.
+  if (name === 'resumen') {
+    refreshUsage();
+    refreshMemory();
+  }
+  if (name === 'modelos') refreshPulls();
+  if (name === 'consumo') refreshUsage();
   if (name === 'almacenamiento') refreshDisk();
   if (name === 'auto') refreshAuto();
-  if (name === 'modelos') refreshPulls();
+  updateTabsFade();
 }
 
-el.tabs.forEach((btn) => {
+// Las pestañas se recorren con las flechas, como un tablist de verdad.
+el.tabs.forEach((btn, i) => {
   btn.addEventListener('click', () => setTab(btn.dataset.tab));
+  btn.addEventListener('keydown', (event) => {
+    if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    let next = i;
+    if (event.key === 'ArrowRight') next = (i + 1) % el.tabs.length;
+    else if (event.key === 'ArrowLeft') next = (i - 1 + el.tabs.length) % el.tabs.length;
+    else if (event.key === 'Home') next = 0;
+    else next = el.tabs.length - 1;
+    setTab(el.tabs[next].dataset.tab);
+    el.tabs[next].focus();
+  });
 });
+
+// Aviso visual de que quedan pestañas a la derecha en pantallas estrechas.
+function updateTabsFade() {
+  if (!tabsNav) return;
+  const overflow = tabsNav.scrollWidth - tabsNav.clientWidth > 2;
+  el.tabsWrap.classList.toggle('scrollable', overflow);
+  el.tabsWrap.classList.toggle('at-end',
+    tabsNav.scrollLeft + tabsNav.clientWidth >= tabsNav.scrollWidth - 2);
+}
+
+tabsNav?.addEventListener('scroll', updateTabsFade, { passive: true });
 
 // ---------- memoria de la GPU en tiempo real ----------
 
@@ -1178,9 +1325,13 @@ window.addEventListener('resize', () => {
 refresh();
 setInterval(refresh, REFRESH_MS);
 
-const initialTab = localStorage.getItem(LS_TAB_KEY) || 'modelos';
-// Si quedó guardada la pestaña 'resumen' de la versión anterior, se ignora.
-setTab(VALID_TABS.includes(initialTab) ? initialTab : 'modelos');
+const initialTab = tabFromHash() || localStorage.getItem(LS_TAB_KEY) || 'resumen';
+setTab(initialTab);
+
+window.addEventListener('hashchange', () => {
+  const name = tabFromHash();
+  if (name && name !== activeTab) setTab(name);
+});
 
 refreshMemory();
 setInterval(() => {
@@ -1202,6 +1353,13 @@ setInterval(() => {
   if (!document.hidden) refreshAuto();
 }, AUTO_REFRESH_MS);
 
+refreshUsage();
+setInterval(() => {
+  if (!document.hidden) refreshUsage();
+}, USAGE_REFRESH_MS);
+
+window.addEventListener('resize', updateTabsFade);
+
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     refresh();
@@ -1209,5 +1367,7 @@ document.addEventListener('visibilitychange', () => {
     refreshDisk();
     refreshPulls();
     refreshAuto();
+    refreshUsage();
+    updateTabsFade();
   }
 });
